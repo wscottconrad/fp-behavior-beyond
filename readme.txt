@@ -1,5 +1,7 @@
 Written 03/03/2025
 
+This is only a draft repository!
+
 Key programs:
 
 RWD_extract: gets data from rwd and neurotar, does some processing, creates traces. each session is saved seperately, but as of date of writing multiple channels from
