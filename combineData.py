@@ -15,8 +15,10 @@ tankfolder = r'\\vs03.herseninstituut.knaw.nl\VS03-CSF-1\Conrad\Innate_approach\
 
 siteList = ['ZI-L', 'ZI-R', 'SC-L', 'SC-R', 'SC to ZI-L', 'SC to ZI-R']
 
-allDat = [[] for _ in range(15)]
-trialDat = {site: {'approach': [], 'avoid': [], 'NR': []} for site in siteList}  # Dictionary to separate data by site
+allDat = [[] for _ in range(17)]
+trialDat = {site: {'approach': [], 'avoid': []} for site in siteList}  # Dictionary to separate data by site
+trialDat_laser_algn = {site: {'approach': [], 'avoid': [], 'NR': []} for site in siteList}  # Dictionary to separate data by site
+
 
 # Iterate through experiment folder
 files = [f for f in os.listdir(tankfolder) if f.endswith('.pkl') and f != 'allDatComb.pkl']
@@ -36,20 +38,25 @@ for file in files:
         # Store trial-specific data
         if not np.isscalar(data['ZdFoFApproach']):
             allDat[12].append(data['ZdFoFApproach'])
+            allDat[13].append(data['ZdFoFApproach_trialOnset'])
             if site in trialDat:
                 trialDat[site]['approach'].append(data['ZdFoFApproach'])
+                trialDat_laser_algn[site]['approach'].append(data['ZdFoFApproach_trialOnset'])
+
         
         if not np.isscalar(data['ZdFoFAvoid']):
-            allDat[13].append(data['ZdFoFAvoid'])
+            allDat[14].append(data['ZdFoFAvoid'])
+            allDat[15].append(data['ZdFoFAvoid_trialOnset'])
             if site in trialDat:
                 trialDat[site]['avoid'].append(data['ZdFoFAvoid'])
+                trialDat_laser_algn[site]['avoid'].append(data['ZdFoFAvoid_trialOnset'])
         
         # print([data['mouse'], data['session']])    
 
         if not np.isscalar(data['ZdFoFNR']):
-            allDat[14].append(data['ZdFoFNR'])
+            allDat[16].append(data['ZdFoFNR'])
             if site in trialDat:
-                trialDat[site]['NR'].append(data['ZdFoFNR'])
+                trialDat_laser_algn[site]['NR'].append(data['ZdFoFNR'])
 
         # Speed data
         if not np.isscalar(data['speedTrialsMov']):
@@ -80,13 +87,21 @@ allDatComb = {
     'ITIGdata': np.vstack(allDat[10]),
     'ITIIdata': np.vstack(allDat[11]),
     'approachSignal': np.vstack(allDat[12]),
-    'avoidSignal': np.vstack(allDat[13]),
-    'NRsignal': np.vstack(allDat[14]),
+    'approachSignal_trialOnset': np.vstack(allDat[13]),
+    'avoidSignal': np.vstack(allDat[14]),
+    'avoidSignal_trialOnset': np.vstack(allDat[15]),
+    'NRsignal': np.vstack(allDat[16]),
 
+    # SITE SPECIFIC DATA
+    # movement aligned
     'trialData': {site: {'approach': np.vstack(values['approach']) if values['approach'] else np.array([]),
+                        'avoid': np.vstack(values['avoid']) if values['avoid'] else np.array([])}
+                  for site, values in trialDat.items()},  # Store separated site data
+    # prey laser onset aligned             
+    'trialData_trialOnset': {site: {'approach': np.vstack(values['approach']) if values['approach'] else np.array([]),
                         'avoid': np.vstack(values['avoid']) if values['avoid'] else np.array([]),
                         'NR': np.vstack(values['NR']) if values['NR'] else np.array([])}
-                 for site, values in trialDat.items()}  # Store separated site data
+                 for site, values in trialDat_laser_algn.items()}  # Store separated site data
 }
 
 # Save combined data

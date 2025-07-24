@@ -69,12 +69,14 @@ def IRLS_dFF(exp_signal, iso_signal, IRLS_constant):
 # Main Processing
 # animalIDs = ['105647', '105648']
 # dates = ['2024_12_12_', '2024_12_16_']
-filePath = 'Z:\\Conrad\\Innate_approach\\Data_collection\\24.35.01\\'
-savePath = 'Z:\\Conrad\\Innate_approach\\Data_analysis\\24.35.01\\'
-ntFilePth = 'Z:\\Conrad\\Innate_approach\\Data_collection\\Neurotar\\'
+filePath = 'W:\\Conrad\\Innate_approach\\Data_collection\\24.35.01\\'
+savePath = 'W:\\Conrad\\Innate_approach\\Data_analysis\\24.35.01\\'
+ntFilePth = 'W:\\Conrad\\Innate_approach\\Data_collection\\Neurotar\\'
 
 
-r_log = pd.read_csv(f"{filePath}\\recordinglog.csv", sep=";")
+r_log = pd.read_csv(f"{filePath}\\recordinglog.csv", sep=";", encoding='cp1252')
+
+r_log = r_log[r_log['Exp'] == 'nt']
 
 animalIDs = r_log['ID'].unique()
 dates = r_log['Date'].unique()
@@ -137,7 +139,7 @@ for l in range(len(r_log)):
         
         
             
-    trialClass = np.array([int(x) for x in str(r_log['trial class'][l]).split('.')])
+    trialClass = np.array([int(x) for x in str(r_log['trial class'][l]).split('.')]) # 0 is NR, 1 is avoid, 2 is approach
 
         
         
@@ -293,7 +295,9 @@ for l in range(len(r_log)):
         #################################
         # Baseline correction (z-scoring)
         #################################
-        traceDataSD = np.std(traceData[:, :pre * sr], axis=1) #axis 1 is along row
+        
+        # not taking trial type into consideration:
+        traceDataSD = np.std(traceData[:, :pre * sr], axis=1) # axis 1 is along row
         ZdFoF = (traceData - np.mean(traceData[:, :pre * sr], axis=1).reshape(-1, 1)) / traceDataSD.reshape(-1, 1)
         
         traceDataSDG = np.std(traceDataG[:, :pre * sr], axis=1)
@@ -302,23 +306,26 @@ for l in range(len(r_log)):
         traceDataSDI = np.std(traceDataI[:, :pre * sr], axis=1)
         Idata = (traceDataI - np.mean(traceDataI[:, :pre * sr], axis=1).reshape(-1, 1)) / traceDataSDI.reshape(-1, 1)
         
-        
-        # and for approach initiation
+        # APPROACH INITIATION and PREYLASER ALIGNED
         if approachTrials is not np.nan and len(approachTrials) > 0:
             ZdFoFApproach = (appTracesInit - np.mean(traceData[app_idx,:pre*sr],axis=1).reshape(-1, 1)) / traceDataSD[app_idx].reshape(-1, 1)
+            ZdFoFApproach_trialOnset = (traceData[app_idx] - np.mean(traceData[app_idx,:pre*sr],axis=1).reshape(-1, 1)) / traceDataSD[app_idx].reshape(-1, 1)
 
         else:
             ZdFoFApproach = np.nan
+            ZdFoFApproach_trialOnset = np.nan
            
             
-        # and for avoid
+        # AVOID INITIATION and PREYLASER ALIGNED
         if avoidTrials is not np.nan and len(avoidTrials) > 0:
             ZdFoFAvoid = (avdTracesInit - np.mean(traceData[avd_idx,:pre*sr],axis=1).reshape(-1, 1)) / traceDataSD[avd_idx].reshape(-1, 1)
+            ZdFoFAvoid_trialOnset = (traceData[avd_idx] - np.mean(traceData[avd_idx,:pre*sr],axis=1).reshape(-1, 1)) / traceDataSD[avd_idx].reshape(-1, 1)
 
         else:
             ZdFoFAvoid = np.nan
+            ZdFoFAvoid_trialOnset = np.nan
             
-        # and for NR
+        # and for NR (only PREYLASER ALIGNED)
         if NRtrials is not np.nan and len(NRtrials) > 0:
             ZdFoFNR = (NRtraces - np.mean(traceData[NR_idx,:pre*sr],axis=1).reshape(-1, 1)) / traceDataSD[NR_idx].reshape(-1, 1)
 
@@ -428,9 +435,15 @@ for l in range(len(r_log)):
             # 'ZdFoFinit': ZdFoFinit,
             'ZdFoFITI': ZdFoFITI,
             
+            # preylater onset locked
+            'ZdFoFApproach_trialOnset': ZdFoFApproach_trialOnset if len(app_idx) > 0  else np.nan,
+            'ZdFoFAvoid_trialOnset': ZdFoFAvoid_trialOnset if len(avd_idx) > 0 else np.nan,
+            'ZdFoFNR': ZdFoFNR if len(NR_idx) > 0 else np.nan,
+            
+            # movement locked:
             'ZdFoFApproach': ZdFoFApproach if len(app_idx) > 0  else np.nan,
             'ZdFoFAvoid': ZdFoFAvoid if len(avd_idx) > 0 else np.nan,
-            'ZdFoFNR': ZdFoFNR if len(NR_idx) > 0 else np.nan,
+            
             
             'Gdata': Gdata,
             'Idata': Idata,

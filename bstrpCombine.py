@@ -14,7 +14,7 @@ from consec_idx import consec_idx
 
 # %% Bootstrap analysis and combine plots for experiments
 # Scott Conrad 20/12/2024, adapted from Isis Alonso-Lozares
-# Takes data created from combineData.m
+# Takes data created from combineData.py
 
 tankfolder = r'\\vs03.herseninstituut.knaw.nl\VS03-CSF-1\Conrad\Innate_approach\Data_analysis\24.35.01\\'
 

@@ -18,7 +18,9 @@ tankfolder = r'\\vs03.herseninstituut.knaw.nl\VS03-CSF-1\Conrad\Innate_approach\
 with open(f'{tankfolder}allDatComb.pkl', 'rb') as f:
     d = pickle.load(f)
 
-trialData = d['trialData']  # Extract site-specific data
+# trialData = d['trialData_trialOnset']  # Extract site-specific data
+trialData = d['trialData']  # for movement aligned data
+
 
 thres = 5  # Consecutive threshold length
 pre = 5
@@ -29,18 +31,33 @@ gree = [0.47, 0.67, 0.19]
 gris = [0.65, 0.65, 0.65]
 red = [0.78, 0, 0]
 
+# this blocked out code is for plotting single trial data
+# siggy = trialData['SC to ZI-R']['approach']
+# plt.figure(figsize=(12, 6))
+
+# for i in range(siggy.shape[0]):
+#     plt.plot(siggy[i], label=f'Row {i}')
+
+# plt.xlabel('Index')
+# plt.ylabel('Value')
+# plt.title('Line Plot of Each Row in 12x900 Array')
+# plt.tight_layout()
+# plt.show()
+
 for site, data in trialData.items():
    
-    
-    if len(data['NR']) > 0:
-        signal = data['NR'][~np.isnan(data['NR']).any(axis=1)]
+    #choose trial type here ('approach', 'avoid', 'NR' )
+    if len(data['approach']) > 0:
+        signal = data['approach'][~np.isnan(data['approach']).any(axis=1)]
+        
+    print(f"Total trials for {site}: {len(data['approach'])}")
     
 
     print(f"Processing site: {site}")
 
     # Bootstrapping
     print('bootstrapping ...')
-    btsrp_NR = bootstrap_data(signal, 5000, 0.0001)
+    btsrp_app = bootstrap_data(signal, 5000, 0.0001)
     
     # print('bootstrapping avoid...')
     # btsrp_avoid = bootstrap_data(avoidSignal, 5000, 0.0001)
@@ -65,13 +82,13 @@ for site, data in trialData.items():
     # Bootstrap significance
     ymax = np.max(np.mean(signal, axis=0) + np.std(signal, axis=0) / np.sqrt(len(signal)))
     
-    tmp = np.where(btsrp_NR[1, :] < 0)[0]
+    tmp = np.where(btsrp_app[1, :] < 0)[0]
     if len(tmp) > 1:
         id = tmp[consec_idx(tmp, thres)]
         plt.plot(ts[id], ymax * np.ones((len(ts[id]), 2)) + 1, 's', 
                  markersize=7, markerfacecolor=gris, color=gris)
         
-    tmp = np.where(btsrp_NR[0, :] > 0)[0]
+    tmp = np.where(btsrp_app[0, :] > 0)[0]
     if len(tmp) > 1:
         id = tmp[consec_idx(tmp, thres)]
         plt.plot(ts[id], ymax * np.ones((len(ts[id]), 2)) + 1, 's', 
@@ -102,7 +119,7 @@ for site, data in trialData.items():
     # Set tick parameters to remove right and top ticks
     plt.gca().tick_params(axis='x', which='both', direction='out', bottom=True, top=False)
     plt.gca().tick_params(axis='y', which='both', direction='out', left=True, right=False)
-    plt.title(f'Site: {site} - NR trials')
+    plt.title(f'Site: {site} - Approach trials')
     plt.ylabel('Z-Score')
     plt.xlabel('Prey laser onset (s)')
     # plt.xlabel('Movement initiation (s)')
