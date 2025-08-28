@@ -32,11 +32,13 @@ for file in files:
         
         # Z-scored data
         allDat[0].append(data['ZdFoF'])
-        allDat[4].append(data['ZdFoFITI'])
+        
+        if not np.any(np.isnan(data['ZdFoFITI'])):
+            allDat[4].append(data['ZdFoFITI'])
 
         
         # Store trial-specific data
-        if not np.isscalar(data['ZdFoFApproach']):
+        if not np.any(np.isnan((data['ZdFoFApproach']))):
             allDat[12].append(data['ZdFoFApproach'])
             allDat[13].append(data['ZdFoFApproach_trialOnset'])
             if site in trialDat:
@@ -44,7 +46,7 @@ for file in files:
                 trialDat_laser_algn[site]['approach'].append(data['ZdFoFApproach_trialOnset'])
 
         
-        if not np.isscalar(data['ZdFoFAvoid']):
+        if not np.any(np.isnan((data['ZdFoFAvoid']))):
             allDat[14].append(data['ZdFoFAvoid'])
             allDat[15].append(data['ZdFoFAvoid_trialOnset'])
             if site in trialDat:
@@ -59,18 +61,21 @@ for file in files:
                 trialDat_laser_algn[site]['NR'].append(data['ZdFoFNR'])
 
         # Speed data
-        if not np.isscalar(data['speedTrialsMov']):
+        if (not np.isscalar(data['speedTrialsMov'])) and (np.sum(data['speedTrialsMov']) != 0):
             allDat[3].append(data['speedTrials']) 
-            allDat[5].append(data['speedITI'])
             allDat[7].append(data['speedTrialsMov'][data['speedTrialsMov'][:, 0] != 0])
+            
+        if (not np.isscalar(data['speedITI'])) and (np.sum(data['speedITI']) != 0):
+            allDat[5].append(data['speedITI'])
 
         # Traces for green and isosbestic channels
         allDat[1].append(data['Gdata'])
         allDat[2].append(data['Idata'])
         # allDat[8].append(data['InitGdata'])
         # allDat[9].append(data['InitIdata'])
-        allDat[10].append(data['ITIGdata'])
-        allDat[11].append(data['ITIIdata'])
+        if not np.isscalar(data['ITIGdata']):
+            allDat[10].append(data['ITIGdata'])
+            allDat[11].append(data['ITIIdata'])
 
 # Combine data
 allDatComb = {

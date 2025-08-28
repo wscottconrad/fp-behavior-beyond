@@ -1,10 +1,6 @@
 # -*- coding: utf-8 -*-
 """
 Created on Mon Mar  3 13:11:28 2025
-
-@author: sconrad
-"""
-
 # extracts data from RWD system, processes it, and collates traces
 
 # default traces made for TTL inputs (trials), but additional scripts can be
@@ -12,6 +8,10 @@ Created on Mon Mar  3 13:11:28 2025
 # initiation, movement during iter trial intervals, etc)
 
 #scott conrad 02/12/2024, adapted from Isis Alonso-Lozares
+
+"""
+
+
 import sys
 sys.path.append('/Users/sconrad/Documents/GitHub/fp-behavior-beyond')
 
@@ -66,17 +66,15 @@ def IRLS_dFF(exp_signal, iso_signal, IRLS_constant):
     
     return dFF, ft_iso_signal
 
-# Main Processing
-# animalIDs = ['105647', '105648']
-# dates = ['2024_12_12_', '2024_12_16_']
 filePath = 'W:\\Conrad\\Innate_approach\\Data_collection\\24.35.01\\'
 savePath = 'W:\\Conrad\\Innate_approach\\Data_analysis\\24.35.01\\'
 ntFilePth = 'W:\\Conrad\\Innate_approach\\Data_collection\\Neurotar\\'
 
-
 r_log = pd.read_csv(f"{filePath}\\recordinglog.csv", sep=";", encoding='cp1252')
 
 r_log = r_log[r_log['Exp'] == 'nt']
+r_log = r_log[r_log['notes'] != 'no ttl alignment']
+r_log = r_log.reset_index()
 
 animalIDs = r_log['ID'].unique()
 dates = r_log['Date'].unique()
@@ -92,7 +90,7 @@ ma = 90 * sr  # Moving average window, default = 90 seconds
 setUp = 120 * sr  # start data trim from 2 minutes before first trial
 
 # Trace window
-pre = 5  # 5 seconds before
+pre = 5  # 5 seconds before ttl
 post = 25  # 25 seconds after
 before = pre * sr
 after = post * sr
@@ -103,13 +101,13 @@ driftTable = np.zeros((len(r_log), 4))
 
 
 for l in range(len(r_log)):
-    
-    if r_log['notes'][l] == 'no ttl alignment':
-        continue
-    
+      
     idn = str(r_log['ID'][l])
-    d = str(r_log['Date'][l])   
+    d = str(r_log['Date'][l]) 
     
+    # # for debugging
+    # if ((idn == '112742') and (d == '2025_06_05_')) == False:
+    #     continue
     
     # Load data
     ntFile = f"{ntFilePth}Track_[{d.replace('_', '-', 2)}*{idn}_session*\\*.mat"
@@ -117,25 +115,25 @@ for l in range(len(r_log)):
         
     ttlFile = f"{ntFilePth}{idn}_{d.replace('_', '')}_01_ttl"
     rawData = pd.read_csv(f"{filePath}{d}{idn}\\Fluorescence.csv", skiprows=1)
-    # eventtimestamps = signal.iloc[:,1]
+    # eventTS = signal.iloc[:,1]
       
     # rawData = pd.read_csv('Z:\\Conrad\\Innate_approach\\Data_collection\\24.35.01\\2025_03_12_107819\\Fluorescence.csv', skiprows=1) 
     timestamps = rawData.iloc[:, 0] / 1000
         
-    eventtimestamps = rawData.iloc[:, 1].str.contains('Input1*2*0', regex = False, na = False)
-    eventtimestamps = eventtimestamps[eventtimestamps].index
+    eventTS = rawData.iloc[:, 1].str.contains('Input1*2*0', regex = False, na = False)
+    eventTS = eventTS[eventTS].index
     
     
     fIdx = []
     # code for removing failed laser presentations
     if isinstance(r_log['Failed'][l], int):
         fIdx = np.array(int(r_log['Failed'][l]))
-        eventtimestamps = eventtimestamps.delete(np.array(int(r_log['Failed'][l])))
+        eventTS = eventTS.delete(np.array(int(r_log['Failed'][l])))
     elif isinstance(r_log['Failed'][l], float) and  np.isnan(r_log['Failed'][l]) == False:
         fIdx = np.array(list(map(int, str(r_log['Failed'][l]).split('.'))))
         if fIdx[1] == 0:
             fIdx = np.delete(fIdx, 1)
-        eventtimestamps = eventtimestamps.delete(fIdx)
+        eventTS = eventTS.delete(fIdx)
         
         
             
@@ -147,18 +145,16 @@ for l in range(len(r_log)):
     behindLaserIndex = []
     if pd.isnull(r_log['Behind trials'][l]) == False:
         behindLaserIndex =  np.array([int(x) for x in str(r_log['Behind trials'][l]).split('.')])
-        eventtimestampsBehind = eventtimestamps[behindLaserIndex]
-        eventtimestamps = eventtimestamps.delete(behindLaserIndex)
+        eventTSBehind = eventTS[behindLaserIndex]
+        eventTS = eventTS.delete(behindLaserIndex)
         
     else:
-        eventtimestampsBehind = np.nan
-       
-
+        eventTSBehind = np.nan
+               
         
-        
-    clipStart = min(eventtimestamps - setUp)
-    clipEnd = max(eventtimestamps) + 30 * sr
-    eventtimestamps = eventtimestamps - clipStart
+    clipStart = min(eventTS - setUp)
+    clipEnd = max(eventTS) + 30 * sr
+    eventTS = eventTS - clipStart
         
     for ch in range(1, numChannels + 1):
         site = r_log[str(ch)][l]
@@ -183,26 +179,26 @@ for l in range(len(r_log)):
         plt.plot(dFoF)
         
         # Prepare to store traces
-        traces = np.full((len(eventtimestamps), before + after), np.nan)
-        tracesGraw = np.full((len(eventtimestamps), before + after), np.nan)
-        tracesIraw = np.full((len(eventtimestamps), before + after), np.nan)
+        traces = np.full((len(eventTS), before + after), np.nan)
+        tracesGraw = np.full((len(eventTS), before + after), np.nan)
+        tracesIraw = np.full((len(eventTS), before + after), np.nan)
         
         # Compute the indices for the window
-        startIdx = eventtimestamps - before
-        endIdx = eventtimestamps + after 
+        startIdx = eventTS - before
+        endIdx = eventTS + after 
         
         # get nt data
         if ch == 1:
             (ITIidx, speedITI, trialIdxInit, speedTrials, ttl, 
              movTrialIdx, app_idx, avd_idx,speedTrialsMov, 
              approachTrials, avoidTrials, initTrace) = nt_ITI_movement(ntFile, ttlFile, 
-                                                                       eventtimestamps, sr,
-                                                          eventtimestampsBehind, 
+                                                                       eventTS, sr,
+                                                          eventTSBehind, 
                                                           idn, d, fIdx, behindLaserIndex,
-                                                          driftTable, l, trialClass);
+                                                          driftTable, l, trialClass, setUp);
         
         # Extract trial traces
-        for m in range(len(eventtimestamps)):
+        for m in range(len(eventTS)):
             traces[m] = dFoF[startIdx[m]:endIdx[m]]
             tracesGraw[m] = lp_normDatG[startIdx[m]:endIdx[m]]
             tracesIraw[m] = lp_normDatI[startIdx[m]:endIdx[m]]
@@ -257,7 +253,7 @@ for l in range(len(r_log)):
             
         # traces for No Response (NR)
         NR_idx = np.where(trialClass == 0)[0] # index of trials
-        NRtrials = ttl[NR_idx]
+        NRtrials = ttl[NR_idx] #affected by change in ttl 15/8/25
         NRtraces = np.full((len(NRtrials), before + after), np.nan)
         
         NRtrials = NRtrials.astype(np.int64)

@@ -50,11 +50,11 @@ if fiberData
     trimStart = 3000; % ms
 
 else
-    date = "2025_07_30_";
-    animal = "112741";
+    date = "2025_07_15_";
+    animal = "112742";
     trimStart = 30000; % ms, 30000 for normal trials (30 sec)
     filePath = strcat('\\vs03.herseninstituut.knaw.nl\VS03-CSF-1\Conrad\Innate_approach\Data_collection\24.35.01\', date, animal, '\');
-    filePattern = strcat(stimDataPath, erase(date, '_'), '_', animal, '_newSpeed*.mat'); % withspeed or newSpeed
+    filePattern = strcat(stimDataPath, erase(date, '_'), '_', animal, '_withspeed*.mat'); % withspeed or newSpeed
 
     % Get a list of matching files
     files = dir(filePattern);
@@ -376,10 +376,6 @@ if ~fiberData
     speedThreshold_init = 0.0025; % play around with this
 
     direction = structEP.vecDirection;
-    need to make code here that sums direction trial amount to make normalize
-    dir_move_resp = zeros(4,1);
-    dir_move_init = zeros(4,1);
-
 
     if filtMove
         for i = 1:720
@@ -410,15 +406,13 @@ if ~fiberData
                     i ~= 1) % need to fix this
 
                 init_prob(i) = 1;
-                dir_move_init(direction(i)/90+1) = dir_move_init(direction(i)/90+1) + 1;
-
 
             end
 
             if mean(speedSet(Pre_idx:ttl_idx,2)) < mean(speedSet(ttl_idx:Post_idx,2))
 
                 move_resp(i) = 1;
-                dir_move_resp(direction(i)/90+1) = dir_move_resp(direction(i)/90+1) + 1;
+                dir_move_resp(direction(i)/90)
 
             end 
 
