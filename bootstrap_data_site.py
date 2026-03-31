@@ -6,12 +6,18 @@ Created on Wed Mar 26 15:45:00 2025
 """
 
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 import pickle
 from perm_test_array import perm_test_array
 # from bootstrap_data import bootstrap_data
 from bootstrap_data_bias_corrected import bootstrap_data
 from consec_idx import consec_idx
+from scipy.stats import ttest_rel, wilcoxon
+from boxoff import boxoff
+import statsmodels.formula.api as smf
+
+
 
 
 nt = False
@@ -19,7 +25,9 @@ initiate_aligned = True
 perm_testing = True # if u wanna test difference between two signals
 # site_specific = 'ZI-L' 
 trial_type = ['approach', 'IR'] #choose one or more trial type here ('approach', 'avoid', 'NR' )
-combine_hemispheres = False
+combine_hemispheres = True
+
+sr = 30 # sampling rate, fps
 
 # Load combined data
 if nt == True:
@@ -33,7 +41,7 @@ with open(f'{tankfolder}allDatComb.pkl', 'rb') as f:
 if initiate_aligned == True:
     trialData = d['trialData']  # for movement aligned data
 else: 
-    trialData = d['trialData_trialOnset']  # for prey laser onset data, rmember to change title ;)
+    trialData = d['trialData_trialOnset']  # for prey laser onset data
  
 
 
@@ -94,13 +102,14 @@ if combine_hemispheres:
         
     d['ITI'] = data_list[1]
 
+
 trialData = data_list[0]
 
 
 for site, data in trialData.items():
     
-    # if site != 'PAG-L' or site != 'PAG-R':
-    #     continue
+    if site == 'ZI-both':
+        continue
    
     plt.figure()
         
@@ -124,6 +133,8 @@ for site, data in trialData.items():
                 
                 if 'ITI' in trial_type:
                     signal_ITI = d['ITI'][site]['ITI']
+                    if np.any(np.isnan(signal_ITI)):
+                        print('NAN detected in ITI')
                     print(f"Total ITI traces for {site}: {len(signal_ITI)}")
                     plot_data = [signal, signal_ITI]
                 else:
@@ -148,7 +159,6 @@ for site, data in trialData.items():
 
     
     for index, signal in enumerate(plot_data):
-        
     
         # Bootstrapping
         print('bootstrapping ...')
@@ -165,6 +175,9 @@ for site, data in trialData.items():
             plt_color = [0.78, 0, 0] # red, avoid
           
         ts = np.linspace(-pre, post, signal.shape[1])
+        
+   
+
     
         # Plot signal
         plt.plot(ts, np.mean(signal, axis=0), color=plt_color, label=trial_type[index])
@@ -191,14 +204,27 @@ for site, data in trialData.items():
             
     
         
-    if perm_testing:
+    if perm_testing and len(plot_data) == 2:
         print('Permuting ...')
-        ymax = ymax +0.5
-        # perm_test, _ = perm_test_array(trialData[site][trial_type[0]], d['ITI'][site][trial_type[1]], 1000)
-        perm_test, _ = perm_test_array(trialData[site][trial_type[0]], trialData[site][trial_type[1]], 1000)
-        perm_hits = np.where(perm_test<0.05)[0] # find significant points in permutation test
-        perm_x = perm_hits[consec_idx(perm_hits, thres)] # consecutive thersholding
-        plt.plot(ts[perm_x], ymax * np.ones((len(ts[perm_x]), 2)), 's', markersize=7, markerfacecolor=  [0.659, 0.427, 0.91], color= [0.659, 0.427, 0.91])
+        ymax = ymax + 0.5
+    
+        perm_test, _ = perm_test_array(
+            plot_data[0],
+            plot_data[1],
+            1000
+        )
+    
+        perm_hits = np.where(perm_test < 0.05)[0]
+        perm_x = perm_hits[consec_idx(perm_hits, thres)]
+    
+        plt.plot(
+            ts[perm_x],
+            ymax * np.ones((len(ts[perm_x]), 2)),
+            's',
+            markersize=7,
+            markerfacecolor=[0.659, 0.427, 0.91],
+            color=[0.659, 0.427, 0.91]
+        )
         
     plt.axvline(x=0, linestyle='--', color='black', linewidth=1.5)
     plt.axhline(y=0, linestyle='--', color='black', linewidth=1.5)
@@ -221,4 +247,96 @@ for site, data in trialData.items():
     # plt.legend()
     # plt.savefig(f'{tankfolder}{site}_{trial_type}.png', transparent = True)
     plt.show()
+    
+    # AUC comparison
+    for index, signal in enumerate(plot_data):
+        # Define baseline windows (in frames)
+        baseline1 = (-5, -2.5)
+        baseline2 = (-2.5, 0)
+        
+        # Get indices for each baseline
+        b1_idx = np.where((ts >= baseline1[0]) & (ts < baseline1[1]))[0]
+        b2_idx = np.where((ts >= baseline2[0]) & (ts < baseline2[1]))[0]
+        
+        # Time step (assumes uniform sampling)
+        dt = ts[1] - ts[0]
+        
+        # Compute AUC per trial
+        auc_b1 = np.trapz(signal[:, b1_idx], dx=dt, axis=1)
+        auc_b2 = np.trapz(signal[:, b2_idx], dx=dt, axis=1)
+        
+        # Store if you want later
+        # e.g. auc_results[site][trial_type[index]] = (auc_b1, auc_b2)
+        
+        plt.figure()
+        
+        # Colors for plotting
+        if trial_type[index] == 'approach':
+            plt_color = [0.47, 0.67, 0.19] #green
+        elif trial_type[index] == 'NR':
+            plt_color = [0.65, 0.65, 0.65] #grey
+        elif trial_type[index] == 'ITI' or trial_type[index] == 'IR':
+            plt_color = [0.416, 0.741, 0.741] #blue
+        else:
+            plt_color = [0.78, 0, 0] # red, avoid
+            
+        # Means and SEMs
+        means = [np.mean(auc_b1), np.mean(auc_b2)]
+        sems  = [
+            np.std(auc_b1) / np.sqrt(len(auc_b1)),
+            np.std(auc_b2) / np.sqrt(len(auc_b2))
+        ]
+        
+        # X positions
+        x = np.arange(2)
+        
+        # Bar plot
+        plt.bar(
+            x,
+            means,
+            yerr=sems,
+            color=plt_color,
+            alpha=0.8,
+            edgecolor='black',
+            capsize=5
+        )
+        for i in range(len(auc_b1)):
+            plt.plot(x, [auc_b1[i], auc_b2[i]], color='k', alpha=0.2, linewidth=0.8)
 
+        # Formatting
+        plt.xticks(x, ['-5 to -2.5 s', '-2.5 to 0 s'])
+        plt.ylabel('Baseline AUC')
+        plt.title(f'{site} | {trial_type[index]}')
+        
+        # Match your axis style
+        plt.gca().spines['top'].set_visible(False)
+        plt.gca().spines['right'].set_visible(False)
+        plt.gca().tick_params(axis='x', which='both', direction='out')
+        plt.gca().tick_params(axis='y', which='both', direction='out')
+        
+        boxoff()
+        plt.show()
+        
+        diff = auc_b2 - auc_b1
+        plt.hist(diff, bins=20)
+        plt.title('AUC difference distribution')
+        plt.show()
+        
+        import scipy.stats as stats
+        stats.probplot(diff, plot=plt)
+        plt.show()
+        from scipy.stats import shapiro
+        print(f'Normality test: {shapiro(diff)}')
+        
+        tstat, pval = ttest_rel(auc_b1, auc_b2)
+        print(f"  Paired t-test: t = {tstat:.3f}, p = {pval:.4e}")
+        
+        # df = pd.DataFrame({
+        #     'diff_auc': auc_b2 - auc_b1,
+        #     'animal': animal_ids   # same length as auc arrays
+        # })
+        
+        # model = smf.mixedlm("diff_auc ~ 1", df, groups=df["animal"])
+        # res = model.fit()
+        
+        # print(res.summary())

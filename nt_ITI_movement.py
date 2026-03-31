@@ -49,7 +49,7 @@ def nt_ITI_movement(nt_file, ttl_file, event_timestamps, sr,
     # thresh = 30  # speed threshold for locomotion start [old threshold before 15/10/25]
     start_idx = 5 * sr
     end_idx = 25 * sr
-    set_up = 120 * sr
+
 
     # data = scipy.io.loadmat(nt_file)
     data = scipy.io.loadmat(nt_file, struct_as_record=False, squeeze_me=True)

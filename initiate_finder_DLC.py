@@ -6,7 +6,7 @@ find approach initiation times
 
 @author: conrad
 """
-def initiate_finder_DLC(ttlFile, eventTS_RWD, r_log, fIdx, l, setUp, 
+def initiate_finder_DLC(ttlFile, eventTS_RWD, r_log, fIdx, l, 
                     stim_dur, sr, plotknee, regenerate_approach_trial_times):
     
     import pickle

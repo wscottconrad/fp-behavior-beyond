@@ -17,7 +17,7 @@ fm_exp = True # set to false if analyzing nt experiments
 regenerate_approach_trial_times = False # used for shuffling trial times for NR trials
 automate_initiate_finder = True # set to false to use manually curated initate times (only for trials, not for ITI)
 
-inspect_traces = False # plots individual traces on same graph
+inspect_traces = False # plots raw + fitted traces for each approach trial on same graph
 
 plotsignal = False
 plotknee = False # plot 'knee' of movement, used to visually verify calculated initiation point
@@ -27,10 +27,10 @@ plot_Zscore = True # set to false if you want to see % dFoF
 plot_apr_trace = False # plot traces for approach trials
 plot_ITI_trace = False # plot traces for movement during Inter-Trial Intervals
 plotheatmap = True
-plotidvtrials = False
+plotidvtrials = True
 plot_angular_velocity = False
 plot_cros_cor = False #cross correlations between signal and fwd movement
-
+plot_turn_trace = False
 initiate_exclusion = 5 # in seconds
 
 
@@ -45,6 +45,7 @@ from nt_ITI_movement import nt_ITI_movement
 from initiate_finder_DLC import initiate_finder_DLC
 from scipy import signal
 import glob
+import os
 import pickle
 import random
 from boxoff import boxoff
@@ -180,7 +181,8 @@ fm_savePath = 'W:\\Conrad\\Innate_approach\\Data_analysis\\24.35.01\\freelymovin
 ntFilePth = 'W:\\Conrad\\Innate_approach\\Data_collection\\Neurotar\\'
 fm_approach_times_path = 'W:\\Conrad\\Innate_approach\\Data_analysis\\24.35.01\\DLC\\approach_times_since_trial_start.pkl'
 nt_approach_times_path = f"{nt_savePath}\\approach_times_since_trial_start.pkl"    
-kpms_general_path = 'E:/Conrad/DLC projects/DLC 06_01_2025/fm_subset_cropped/2026_01_14-14_00_06/results/'
+# kpms_general_path = 'E:/Conrad/DLC projects/DLC 06_01_2025/fm_subset_cropped/2026_01_14-14_00_06/results/'
+kpms_general_path = 'E:/Conrad/DLC projects/DLC 06_01_2025/fm_subset_cropped/2026_02_03-16_56_39/results/'
 
 
 if regenerate_approach_trial_times == False:
@@ -259,9 +261,12 @@ for l in range(len(r_log)):
     d = str(r_log['Date'][l]) 
     exp = r_log['Exp'][l]
     
-    if idn in excluded_animals: # exclude from analysis
+    if idn in excluded_animals or l == 13 or l == 14: # exclude from analysis
         continue
-        
+    
+    if r_log['first prey'][l] == "don't analyze":
+        continue
+    
     # Load data
     if exp == 'nt':
         ntFile = f"{ntFilePth}Track_[{d.replace('_', '-', 2)}*{idn}_session*\\*.mat"
@@ -319,6 +324,7 @@ for l in range(len(r_log)):
                
     if (l != 14 and exp != 'nt') or exp == 'nt':    
         clipStart = min(eventTS - setUp)
+        # clipStart = 0
     else:
         clipStart = 0
 
@@ -334,6 +340,8 @@ for l in range(len(r_log)):
         
     for ch in range(1, numChannels + 1):
         site = r_log[str(ch)][l]
+        
+        
         
         # insert debug condition(s) below
         if debug and idn != '111610' and d != '2025_05_12':
@@ -354,7 +362,6 @@ for l in range(len(r_log)):
         chIsos = rawData.iloc[int(clipStart):int(clipEnd), 2 * ch]
         chGreen = rawData.iloc[int(clipStart):int(clipEnd), 2 * ch + 1]
         
-        proper_trim = len(rawData.iloc[int(clipStart):int(last_event_noclip+25*sr), 2 * ch])
         
         # sample_signal = sample_signal = np.concatenate([np.full(300, 0), np.full(300, 1), np.full(300, 0)])
         # filtered_sample = lpFilter(sample_signal, sr, lowpass_cutoff, filt_order, db_atten)
@@ -378,7 +385,7 @@ for l in range(len(r_log)):
             # Fit isosbestic signal to green channel and compute dF/F
             plt.title(f'{idn} {d} {site} Channel {ch} dF/F')
     
-            plt.plot(dFoF+25, color = "grey")
+            plt.plot(dFoF, color = "grey")
         
         # Prepare to store traces
         traces = np.full((len(eventTS), before + after), np.nan)
@@ -458,16 +465,14 @@ for l in range(len(r_log)):
                 (approachTrials, IR_approachTrials, app_idx, initTrace, IR_initTrace,
                  approach_snout_speed, IR_snout_speed, IR_onset_idx, IR_app_idx, IR_idx,
                  drift, drift_ratio) = initiate_finder_DLC(ttlFile, eventTS, r_log, 
-                                                           fIdx, l, setUp,
+                                                           fIdx, l, 
                                                            stim_dur,sr, plotknee, regenerate_approach_trial_times)
                  
                                                        
                 IR_idx = fm_drift_corrector(IR_idx)
                 IR_onset_idx = fm_drift_corrector(IR_onset_idx)
                 IR_approachTrials = fm_drift_corrector(IR_approachTrials)
-               
-
-                                  
+                                                
                 fm_drift.append(drift)
                 fm_drift_ratio.append(drift_ratio)
                     
@@ -513,10 +518,7 @@ for l in range(len(r_log)):
                     apr_times = np.concatenate((apr_times, shuffled_nt_apr_times)) # there are less NR trials than approach so i need to reuse
                 shuffled_times = apr_times[0:len(NR_idx)]
                 apr_times = apr_times[len(NR_idx):]
-        
-        
-        
-        
+              
 # %%
 
         # capture manually curated problem prey trials for inspection and eventual deleting
@@ -601,8 +603,7 @@ for l in range(len(r_log)):
                          plt.plot(IR_tracesIraw[trial_number] - np.mean(IR_tracesIraw[trial_number]), color = [0.373, 0.671, 0.922], alpha=0.7)
                          plt.title(f'Traces for IR trial {trial_number}, Ch {ch}')
                          boxoff()
-        
-        
+              
         # # Align raw traces to movement if necessary. i do this to show isosbestic doesnt change with movement 
         # tracesInit = np.full((len(approachTrials), before + after), np.nan)
         tracesInitGraw = np.full((len(approachTrials), before + after), np.nan)
@@ -622,8 +623,6 @@ for l in range(len(r_log)):
             tracesInitGraw = np.nan
             tracesInitIraw = np.nan
         
-        
-        
         # dFoF traces for prey approach, movement aligned
         appTracesInit = np.full((len(approachTrials), before + after), np.nan)
              
@@ -631,15 +630,11 @@ for l in range(len(r_log)):
             
             for m in range(len(approachTrials)):
                 if np.size(dFoF[approachTrials[m] - before:approachTrials[m] + after]) == 900:
-                    appTracesInit[m] = dFoF[approachTrials[m] - before:approachTrials[m] + after]
-                
+                    appTracesInit[m] = dFoF[approachTrials[m] - before:approachTrials[m] + after]              
         else:
             appTracesInit = np.nan
-            
-         
-        # dFoF traces for IR approach, movement aligned
-    
-     
+                    
+        # dFoF traces for IR approach, movement aligned     
         if len(IR_approachTrials) > 0:
             IR_appTracesInit = np.full((len(IR_approachTrials), before + after), np.nan)
             # IR_approachTrials = IR_approachTrials.astype(np.int64)
@@ -647,13 +642,10 @@ for l in range(len(r_log)):
                 if np.size(dFoF[IR_approachTrials[m] - before:IR_approachTrials[m] + after]) == 900:
                     IR_appTracesInit[m] = dFoF[IR_approachTrials[m] - before:IR_approachTrials[m] + after]
                 else:
-                    print("Not all IR trials included, something went wrong with clipping")
-                
+                    print("Not all IR trials included, something went wrong with clipping")            
         else:
             IR_appTracesInit = np.nan
           
-                     
-            
         # traces for avoid
         if not np.isnan(avoidTrials):
             avdTracesInit = np.full((len(avoidTrials), before + after), np.nan)
@@ -665,8 +657,7 @@ for l in range(len(r_log)):
                     if np.size(dFoF[avoidTrials[m] - before:avoidTrials[m] + after]) == 900:
                         avdTracesInit[m] = dFoF[avoidTrials[m] - before:avoidTrials[m] + after]
                     else:
-                        print("Not all avoid trials included, something went wrong with clipping")
-                
+                        print("Not all avoid trials included, something went wrong with clipping")         
         else:
             avdTracesInit = np.nan
             
@@ -696,9 +687,6 @@ for l in range(len(r_log)):
                     yoked_ts = int(eventTS[nr] + shuffled_times[k])
                     if np.size(dFoF[yoked_ts - before:yoked_ts + after]) == 900: #lazy fix, should edit so it tries another integer from shuffled times
                         NRtraces_yoked[k] = dFoF[yoked_ts - before:yoked_ts + after]
-       
-                
-
         
         # for ITIs
         if ~np.any(np.isnan(ITIidx)):
@@ -719,16 +707,13 @@ for l in range(len(r_log)):
             tracesITI = np.nan
             tracesITIGraw = np.nan
             tracesITIGraw = np.nan
-        
-    
-        
+   
         #################################
         # Baseline correction (z-scoring)
         #################################
         
         # traceDataSD = np.std(traces[:, :pre * sr], axis=1) # axis 1 is along row
-        traceDataSD = np.std(traces[:, :pre * sr]) 
-        
+        traceDataSD = np.std(traces[:, :pre * sr])     
         ZdFoF = (traces - np.mean(traces[:, :pre * sr], axis=1).reshape(-1, 1)) / traceDataSD
         
         # Collate data 
@@ -776,8 +761,7 @@ for l in range(len(r_log)):
         else:
             ZdFoFApproach = np.nan
             ZdFoFApproach_trialOnset = np.nan
-        
-        
+             
         # IR trials
         if len(IR_approachTrials) > 0:
             IR_ZdFoFApproach = (IR_appTracesInit - np.mean(IR_traces[IR_app_idx,:pre*sr],axis=1).reshape(-1, 1)) / IR_traceDataSD
@@ -810,8 +794,7 @@ for l in range(len(r_log)):
         else:
             IR_ZdFoFApproach = np.nan
             IR_ZdFoFApproach_trialOnset = np.nan
-           
-            
+                      
         # AVOID INITIATION and PREYLASER ALIGNED
         if avoidTrials is not np.nan and len(avoidTrials) > 0:
             ZdFoFAvoid = (avdTracesInit - np.mean(traces[avd_idx,:pre*sr],axis=1).reshape(-1, 1)) / traceDataSD
@@ -827,8 +810,6 @@ for l in range(len(r_log)):
             ZdFoFNR = (NRtraces - np.mean(traces[NR_idx,:pre*sr],axis=1).reshape(-1, 1)) / traceDataSD
             
             ZdFoFNR_yoked = (NRtraces_yoked - np.mean(traces[NR_idx,:pre*sr],axis=1).reshape(-1, 1)) / traceDataSD
-
-            
             
 # %% for ITI
 
@@ -845,8 +826,7 @@ for l in range(len(r_log)):
             tracesITIIraw = np.vstack(tracesITIIraw)
             traceDataSDI = np.std(tracesITIIraw[:,:pre*sr])
             ITIIdata = (tracesITIIraw - np.mean(tracesITIIraw[:,:pre*sr],axis=1).reshape(-1,1)) /traceDataSDI
-            
-            
+                      
             if plot_ITI_trace:
                 plt.figure()
                 if plot_Zscore:
@@ -927,8 +907,7 @@ for l in range(len(r_log)):
             plt.ylabel(f"{data_title}")
             plt.xlabel("Time(s): Aligned to prey laser onset")
             plt.title(f'Approach traces for {idn} {d} {site}')
-        
-            
+         
         # IR
         if len(IR_traces) > 0:
             if plot_Zscore:
@@ -969,8 +948,6 @@ for l in range(len(r_log)):
                 
                 # Show plot
                 plt.show()
-        
-            
         
         if plotidvtrials and len(approachTrials) > 0:
             aprchColors = ["#2E8B57", "#228B22", "#6B8E23", "#8FBC8F", "#20B2AA", "#556B2F", "#70a7ff", "#fca103"]
@@ -1022,7 +999,6 @@ for l in range(len(r_log)):
                 plt.title('Approach trials')
                 boxoff()
         
-
         if exp == 'nt' and np.size(tracesITI) > 1:
             lag_correlations_ITI = np.array([norm_xcorr(tracesITI[t], speedITI[t]) 
                           for t in range(tracesITI.shape[0])])
@@ -1084,233 +1060,413 @@ for l in range(len(r_log)):
 # %%
     #    syllable data
         mean_dFoF_by_syllable = np.nan
-        animal_out_of_view_index = list(map(int, r_log['animal hidden frames'][l].split(',')))
+        # left_turn = [5, 9, 10, 11, 13]
+        # right_turn = [3, 4, 6, 8, 16]
+        left_turn = [1, 3, 7, 13, 18, 22]
+        right_turn = [5, 6, 8, 11, 12, 17]
         
-        left_turn = [5, 9, 10, 11, 13]
-        right_turn = [3, 4, 6, 8, 16]
-        if len(animal_out_of_view_index) < 3 and l != 13:
-            kpms_first_ttl = int(r_log['first prey'][l])
-    
-            kpms_path = kpms_general_path + idn + '_' + d.replace("_", "") + '.csv'
-            kpms_data = pd.read_csv(kpms_path, sep=None, engine="python", encoding='cp1252')
-            kpms_data = kpms_data[kpms_first_ttl-animal_out_of_view_index[1]-setUp:]
-            kpms_data = kpms_data[:proper_trim]
+        animal_out_of_view_index = list(map(int, r_log['animal hidden frames'][l].split(',')))
+        animal_in_view_index = []
+        for itr, index in enumerate(animal_out_of_view_index):
+            if itr%2 == 1:
+                animal_in_view_index.append(index)
             
-            dFoF_series = dFoF[:proper_trim]
-            dFoF_series = pd.Series(dFoF_series, index=kpms_data.index)
+        kpms_syncer = int(r_log['first prey'][l]) - setUp #subtract syncer to align to dFoF timeline
+         
+        
+        animal_in_view_index = [x - kpms_syncer for x in animal_in_view_index]
+        
+        kpms_aligned = np.full(len(dFoF), np.nan)
+
+        
+        pattern = os.path.join(kpms_general_path, f"*{idn}*{d.replace("_", "")}*")
+        matching_files = sorted(glob.glob(pattern))
+        
+        for sgmnt, kpms_file in enumerate(matching_files):
+            kpms_data = pd.read_csv(kpms_file, sep=None, engine="python", encoding="cp1252")
+            kpms_signal = kpms_data.iloc[:, 0].to_numpy()
             
-            # category column
-            cat_col = "syllable"
+            start_idx = animal_in_view_index[sgmnt]
+            end_idx = start_idx + len(kpms_signal)
             
-            categories = kpms_data[cat_col].values
-            frames = kpms_data.index.values  # keeps original frame index
+            # Case 1: Segment ends before dFoF starts → discard
+            if end_idx < 1:
+                continue
             
-            bouts = []
+            # Case 2: Segment starts before dFoF begins → trim front
+            if start_idx < 0:
+                trim = -start_idx
+                kpms_signal = kpms_signal[trim:]
+                start_idx = 0
+                end_idx = start_idx + len(kpms_signal)
             
-            current_cat = categories[0]
-            start_i = 0
+            # Case 3: Segment extends beyond dFoF length → trim end
+            if end_idx > len(dFoF):
+                kpms_signal = kpms_signal[:len(dFoF) - start_idx]
+                end_idx = len(dFoF)
             
-            for i in range(1, len(categories)):
-                if categories[i] != current_cat:
-                    end_i = i
-                    length = end_i - start_i
+            # Insert into aligned array
+            kpms_aligned[start_idx:end_idx] = kpms_signal
+
+        
+        aligned_df = pd.DataFrame({
+                        "dFoF": dFoF,
+                        "syllable": kpms_aligned
+                    })   
+           
+        
+        
             
-                    bouts.append({
-                        "syllable": current_cat,
-                        "start_frame": frames[start_i],
-                        "end_frame": frames[end_i-1],
-                        "length_frames": length
-                    })
-            
-                    # reset
-                    current_cat = categories[i]
-                    start_i = i
-            
-            # add last bout
-            bouts.append({
-                "syllable": current_cat,
-                "start_frame": frames[start_i],
-                "end_frame": frames[-1],
-                "length_frames": len(categories) - start_i
+        # category column
+        cat_col = "syllable"
+
+        categories = aligned_df[cat_col].to_numpy()
+        frames = aligned_df.index.to_numpy()   # FIX: use aligned timeline
+        
+        bouts = []
+        
+        current_cat = categories[0]
+        start_i = 0
+        
+        for i in range(1, len(categories)):
+        
+            if categories[i] != current_cat:
+        
+                end_i = i
+                length = end_i - start_i
+        
+                bouts.append({
+                    "syllable": current_cat,
+                    "start_frame": frames[start_i],
+                    "end_frame": frames[end_i - 1],
+                    "length_frames": length
+                })
+        
+                current_cat = categories[i]
+                start_i = i
+        
+        # add final bout
+        bouts.append({
+            "syllable": current_cat,
+            "start_frame": frames[start_i],
+            "end_frame": frames[-1],
+            "length_frames": len(categories) - start_i
+        })
+        
+        bout_df = pd.DataFrame(bouts)
+        
+        # Remove NaN syllable bouts (out-of-view frames)
+        bout_df = bout_df.dropna(subset=["syllable"])
+        
+        # Add metadata, not needed?
+        bout_df["animal"] = idn
+        bout_df["date"] = d
+        all_bouts.append(bout_df)
+        
+        def classify_turn(syll):
+            if syll in left_turn:
+                return "left"
+            elif syll in right_turn:
+                return "right"
+            else:
+                return "other"
+        
+        if "turn_type" not in bout_df.columns:
+            bout_df["turn_type"] = bout_df["syllable"].apply(classify_turn)
+
+        bout_traces = []
+        pre_frames = 30 # "baseline", in frames
+        
+        for bout_id, row in bout_df.iterrows():
+        
+            start_f = row["start_frame"]
+            end_f   = row["end_frame"]
+        
+            start_pre = start_f - pre_frames
+        
+            # exclude syllables where baseline data doesn't exist
+            if start_pre < pre_frames:
+                continue
+        
+            # FIX: extract only dFoF column
+            trace = aligned_df.loc[start_pre:end_f, "dFoF"].to_numpy()
+        
+            bout_traces.append({
+                "bout_id": bout_id,
+                "animal": row["animal"],
+                "date": row["date"],
+                "syllable": row["syllable"],
+                "turn_type": row["turn_type"],
+                "length_frames": len(trace),
+                "dFoF_trace": trace
             })
-            
-            bout_df = pd.DataFrame(bouts)
-            
-            bout_df["animal"] = idn
-            bout_df["date"] = d
-            all_bouts.append(bout_df)
+        
+        bout_trace_df = pd.DataFrame(bout_traces)
 
-            # print(bout_df.head())
-            # print("Total bouts:", len(bout_df))
-            
-            # summary = bout_df.groupby("syllable")["length_frames"].describe()
-            # print(summary)
-            
-            # by frame
-            valid_syllables = list(range(0,21)) # should automate this
-            mean_dFoF_by_syllable = dFoF_series.groupby(kpms_data['syllable']).mean()  
-            mean_dFoF_by_syllable = mean_dFoF_by_syllable[mean_dFoF_by_syllable.index.isin(valid_syllables)]
-            
-            # # --- Extract mean dFoF values for each group ---
-            left_mask = kpms_data["syllable"].isin(left_turn)
-            right_mask = kpms_data["syllable"].isin(right_turn)
-            
-            # Extract dFoF values from ALL frames in each group
-            left_turn_mean = dFoF_series[left_mask].mean()
-            left_turn_SD = dFoF_series[left_mask].std()
+        max_len = bout_trace_df["length_frames"].max()
 
-            right_turn_mean = dFoF_series[right_mask].mean()
-            right_turn_SD = dFoF_series[right_mask].std()
+        padded = np.full((len(bout_trace_df), max_len), np.nan)
+        
+        for i, trace in enumerate(bout_trace_df["dFoF_trace"]):
+            padded[i, :len(trace)] = trace
+        
+        trace_matrix_df = pd.DataFrame(padded)
+        
+        # Metadata
+        trace_matrix_df["syllable"] = bout_trace_df["syllable"].to_numpy()
+        trace_matrix_df["turn_type"] = bout_trace_df["turn_type"].to_numpy()
+        trace_matrix_df["animal"] = bout_trace_df["animal"].to_numpy()
+        trace_matrix_df["date"] = bout_trace_df["date"].to_numpy()
 
+        
+        meta_cols = ["animal", "date", "syllable", "turn_type"]
+        trace_cols = [c for c in trace_matrix_df.columns if c not in meta_cols]
+        
+        trace_matrix_df["bout_length"] = trace_matrix_df[trace_cols].notna().sum(axis=1)
+        
+        min_length = 15 + pre_frames
+        
+        left_long_traces = trace_matrix_df[
+            (trace_matrix_df["turn_type"] == "left") &
+            (trace_matrix_df["bout_length"] >= min_length)
+        ]*100
+        
+        right_long_traces = trace_matrix_df[
+            (trace_matrix_df["turn_type"] == "right") &
+            (trace_matrix_df["bout_length"] >= min_length)
+        ]*100
+
+      
+        turn_trace_length = 30 + pre_frames # frames
+       
+        if plot_turn_trace:
             plt.figure()
-
-            plt.bar(
-                ["Left Turn", "Right Turn"],
-                [left_turn_mean, right_turn_mean],
-                yerr=[left_turn_SD, right_turn_SD],
-                capsize=6
+            plt.plot(
+            range(turn_trace_length),
+            np.mean(left_long_traces.iloc[:, :turn_trace_length], axis=0),
+            color=[0.188, 0.537, 0.741],
+            label="Left Turn"
+            )
+            plt.fill_between(
+                range(turn_trace_length),
+                np.mean(left_long_traces.iloc[:, :turn_trace_length], axis=0)
+                + np.std(left_long_traces.iloc[:, :turn_trace_length], axis=0)
+                / np.sqrt(len(left_long_traces)),
+                np.mean(left_long_traces.iloc[:, :turn_trace_length], axis=0)
+                - np.std(left_long_traces.iloc[:, :turn_trace_length], axis=0)
+                / np.sqrt(len(left_long_traces)),
+                color=[0.188, 0.537, 0.741],
+                alpha=0.3
+            )
+            plt.plot(
+                range(turn_trace_length),
+                np.mean(right_long_traces.iloc[:, :turn_trace_length], axis=0),
+                color=[0.812, 0.706, 0.055],
+                label="Right Turn"
+            )
+    
+            plt.fill_between(
+                range(turn_trace_length),
+                np.mean(right_long_traces.iloc[:, :turn_trace_length], axis=0)
+                + np.std(right_long_traces.iloc[:, :turn_trace_length], axis=0)
+                / np.sqrt(len(right_long_traces)),
+                np.mean(right_long_traces.iloc[:, :turn_trace_length], axis=0)
+                - np.std(right_long_traces.iloc[:, :turn_trace_length], axis=0)
+                / np.sqrt(len(right_long_traces)),
+                color=[0.812, 0.706, 0.055],
+                alpha=0.3
             )
             plt.axhline(y=0, linestyle='--',
                 linewidth=1,
                 color='black')
-            plt.ylabel("Mean dF/F")
-            plt.title(f' {idn} {d} {site} Mean dF/F by frame')
-            plt.tight_layout()
+            plt.axvline(x = pre_frames, linestyle='--',
+                linewidth=1,
+                color='black')
+            plt.xticks([0, 15, 30, 45, 60], [-1, - 0.5, 0, 0.5, 1])
+            plt.xlabel('Time aligned to bout (s)')
+            plt.ylabel('dF/F %')
+            plt.legend()
+            plt.title(f'{idn} {d.replace("_", "")} {site}')
             boxoff()
             plt.show()
 
             
+            # left_bouts = bout_trace_df[bout_trace_df["turn_type"] == "left"]
+            # right_bouts = bout_trace_df[bout_trace_df["turn_type"] == "right"]
             
-            SD_dFoF_by_syllable = dFoF_series.groupby(kpms_data['syllable']).std()
-            SD_dFoF_by_syllable = SD_dFoF_by_syllable[SD_dFoF_by_syllable.index.isin(valid_syllables)]
+            # # summary = bout_df.groupby("syllable")["length_frames"].describe()
+            # # print(summary)
+            
+            # # by frame
+            # valid_syllables = list(range(0,21)) # should automate this
+            # mean_dFoF_by_syllable = dFoF_series.groupby(kpms_data['syllable']).mean()  
+            # mean_dFoF_by_syllable = mean_dFoF_by_syllable[mean_dFoF_by_syllable.index.isin(valid_syllables)]
+            
+            # # # --- Extract mean dFoF values for each group ---
+            # left_mask = kpms_data["syllable"].isin(left_turn)
+            # right_mask = kpms_data["syllable"].isin(right_turn)
+            
+            # plt.figure()
+            # plt.plot()
+            
+            # left_turn_traces_all = dFoF_series[left_mask]
+            
+            # # Extract dFoF values from ALL frames in each group
+            # left_turn_mean = dFoF_series[left_mask].mean()
+            # left_turn_SD = dFoF_series[left_mask].std()
 
-            
-            syllables = mean_dFoF_by_syllable.index
+            # right_turn_mean = dFoF_series[right_mask].mean()
+            # right_turn_SD = dFoF_series[right_mask].std()
 
-            
-            plt.figure()
-            mean_dFoF_by_syllable.plot(kind='bar')
-            plt.errorbar(
-                syllables,
-                mean_dFoF_by_syllable.values,
-                yerr=SD_dFoF_by_syllable,
-                fmt='none',
-                capsize=4,
-                color = 'black'
-            )
-            plt.axhline(y = 2*np.std(dFoF_series), linestyle='--',
-                linewidth=1,
-                color='black')
-            plt.axhline(y = -2*np.std(dFoF_series), linestyle='--',
-                linewidth=1,
-                color='black')
-            plt.xlabel('Syllable')
-            plt.ylabel('Mean dF/F')
-            plt.title(f' {idn} {d} {site} Mean dF/F by syllable')
-            plt.tight_layout()
-            plt.show()
-            
-            # by bout
-            syllable = kpms_data['syllable']
-
-            bout_id = (syllable != syllable.shift()).cumsum()
-            
-            df = pd.DataFrame({
-                'syllable': syllable,
-                'dFoF': dFoF_series,
-                'bout_id': bout_id
-            })
-            
-            bout_lengths = df.groupby('bout_id').size()
-            valid_bouts = bout_lengths[bout_lengths >= 5].index
-            
-            
-            
-            bout_means = (
-                df
-                .groupby(['syllable', 'bout_id'])['dFoF']
-                .mean()
-                .reset_index()
-            )
-            
-            bout_means = bout_means[bout_means['bout_id'].isin(valid_bouts)]
-            
-            mean_dFoF_per_syllable_bout = (
-                bout_means
-                .groupby('syllable')['dFoF']
-                .mean()
-            )
-            mean_dFoF_per_syllable_bout = mean_dFoF_per_syllable_bout[mean_dFoF_per_syllable_bout.index.isin(valid_syllables)].reindex(syllables)
-
-
-            # grouped syllable bouts
-            left_bout_vals = mean_dFoF_per_syllable_bout[
-                mean_dFoF_per_syllable_bout.index.isin(left_turn)
-            ]
-            
-            right_bout_vals = mean_dFoF_per_syllable_bout[
-                mean_dFoF_per_syllable_bout.index.isin(right_turn)
-            ]
-            
             # plt.figure()
 
             # plt.bar(
             #     ["Left Turn", "Right Turn"],
-            #     [left_bout_vals.mean(), right_bout_vals.mean()],
-            #     yerr=[left_bout_vals.sem(), right_bout_vals.sem()],
+            #     [left_turn_mean, right_turn_mean],
+            #     yerr=[left_turn_SD, right_turn_SD],
             #     capsize=6
             # )
+            # plt.axhline(y=0, linestyle='--',
+            #     linewidth=1,
+            #     color='black')
+            # plt.ylabel("Mean dF/F")
+            # plt.title(f' {idn} {d} {site} Mean dF/F by frame')
+            # plt.tight_layout()
+            # boxoff()
+            # plt.show()
+
             
-            # plt.ylabel("Mean dF/F per bout")
-            # plt.title("Bout-Based dF/F Comparison: Left vs Right Turn")
+            
+            # SD_dFoF_by_syllable = dFoF_series.groupby(kpms_data['syllable']).std()
+            # SD_dFoF_by_syllable = SD_dFoF_by_syllable[SD_dFoF_by_syllable.index.isin(valid_syllables)]
+
+            
+            # syllables = mean_dFoF_by_syllable.index
+
+            
+            # plt.figure()
+            # mean_dFoF_by_syllable.plot(kind='bar')
+            # plt.errorbar(
+            #     syllables,
+            #     mean_dFoF_by_syllable.values,
+            #     yerr=SD_dFoF_by_syllable,
+            #     fmt='none',
+            #     capsize=4,
+            #     color = 'black'
+            # )
+            # plt.axhline(y = 2*np.std(dFoF_series), linestyle='--',
+            #     linewidth=1,
+            #     color='black')
+            # plt.axhline(y = -2*np.std(dFoF_series), linestyle='--',
+            #     linewidth=1,
+            #     color='black')
+            # plt.xlabel('Syllable')
+            # plt.ylabel('Mean dF/F')
+            # plt.title(f' {idn} {d} {site} Mean dF/F by syllable')
+            # plt.tight_layout()
+            # plt.show()
+            
+            # # by bout
+            # syllable = kpms_data['syllable']
+
+            # bout_id = (syllable != syllable.shift()).cumsum()
+            
+            # df = pd.DataFrame({
+            #     'syllable': syllable,
+            #     'dFoF': dFoF_series,
+            #     'bout_id': bout_id
+            # })
+            
+            # bout_lengths = df.groupby('bout_id').size()
+            # valid_bouts = bout_lengths[bout_lengths >= 5].index
+            
+            
+            
+            # bout_means = (
+            #     df
+            #     .groupby(['syllable', 'bout_id'])['dFoF']
+            #     .mean()
+            #     .reset_index()
+            # )
+            
+            # bout_means = bout_means[bout_means['bout_id'].isin(valid_bouts)]
+            
+            # mean_dFoF_per_syllable_bout = (
+            #     bout_means
+            #     .groupby('syllable')['dFoF']
+            #     .mean()
+            # )
+            # mean_dFoF_per_syllable_bout = mean_dFoF_per_syllable_bout[mean_dFoF_per_syllable_bout.index.isin(valid_syllables)].reindex(syllables)
+
+
+            # # grouped syllable bouts
+            # left_bout_vals = mean_dFoF_per_syllable_bout[
+            #     mean_dFoF_per_syllable_bout.index.isin(left_turn)
+            # ]
+            
+            # right_bout_vals = mean_dFoF_per_syllable_bout[
+            #     mean_dFoF_per_syllable_bout.index.isin(right_turn)
+            # ]
+            
+            # # plt.figure()
+
+            # # plt.bar(
+            # #     ["Left Turn", "Right Turn"],
+            # #     [left_bout_vals.mean(), right_bout_vals.mean()],
+            # #     yerr=[left_bout_vals.sem(), right_bout_vals.sem()],
+            # #     capsize=6
+            # # )
+            
+            # # plt.ylabel("Mean dF/F per bout")
+            # # plt.title("Bout-Based dF/F Comparison: Left vs Right Turn")
+            # # plt.tight_layout()
+            # # plt.show()
+
+
+            # # all bouts
+            # SD_dFoF_per_syllable = (
+            #     bout_means
+            #     .groupby('syllable')['dFoF']
+            #     .std()
+            # )          
+            # SD_dFoF_per_syllable = SD_dFoF_per_syllable[SD_dFoF_per_syllable.index.isin(valid_syllables)].reindex(syllables)
+
+            
+            # n_bouts = bout_means.groupby('syllable').size()
+            # # syllables = mean_dFoF_per_syllable_bout.index
+
+            # plt.figure()
+            # plt.bar(
+            #     syllables,
+            #     mean_dFoF_per_syllable_bout.values
+            # )
+            # plt.errorbar(
+            #     syllables,
+            #     mean_dFoF_per_syllable_bout.values,
+            #     yerr=SD_dFoF_per_syllable,
+            #     fmt='none',
+            #     capsize=4,
+            #     color = 'black'
+            # )
+            # plt.axhline(y = 2*np.std(dFoF_series), linestyle='--',
+            #     linewidth=1,
+            #     color='black')
+            # plt.axhline(y = -2*np.std(dFoF_series), linestyle='--',
+            #     linewidth=1,
+            #     color='black')
+            # plt.xlabel('Syllable')
+            # plt.ylabel('Mean dF/F (per bout)')
+            # plt.title(f' {idn} {d} {site} Mean dF/F per syllable bout')
             # plt.tight_layout()
             # plt.show()
 
-
-            # all bouts
-            SD_dFoF_per_syllable = (
-                bout_means
-                .groupby('syllable')['dFoF']
-                .std()
-            )          
-            SD_dFoF_per_syllable = SD_dFoF_per_syllable[SD_dFoF_per_syllable.index.isin(valid_syllables)].reindex(syllables)
-
-            
-            n_bouts = bout_means.groupby('syllable').size()
-            # syllables = mean_dFoF_per_syllable_bout.index
-
-            plt.figure()
-            plt.bar(
-                syllables,
-                mean_dFoF_per_syllable_bout.values
-            )
-            plt.errorbar(
-                syllables,
-                mean_dFoF_per_syllable_bout.values,
-                yerr=SD_dFoF_per_syllable,
-                fmt='none',
-                capsize=4,
-                color = 'black'
-            )
-            plt.axhline(y = 2*np.std(dFoF_series), linestyle='--',
-                linewidth=1,
-                color='black')
-            plt.axhline(y = -2*np.std(dFoF_series), linestyle='--',
-                linewidth=1,
-                color='black')
-            plt.xlabel('Syllable')
-            plt.ylabel('Mean dF/F (per bout)')
-            plt.title(f' {idn} {d} {site} Mean dF/F per syllable bout')
-            plt.tight_layout()
-            plt.show()
-
            
-            print(f"dif between proper_trim and kpms_data is {proper_trim-len(kpms_data)} frames") # i think this could be improved by using camera's ttl (first frame when laser appears on last prey trial)
-            
-        else:
-            print('Multiple clippings in file, skipping for now. Write code for this later')
+            # print(f"dif between trim_end and kpms_data is {trim_end-len(kpms_data)} frames") # i think this could be improved by using camera's ttl (first frame when laser appears on last prey trial)
 
 # %%
+        if site == 'exclude':
+            continue
+        
         # Save data
         sesdat = {
             'session': d,

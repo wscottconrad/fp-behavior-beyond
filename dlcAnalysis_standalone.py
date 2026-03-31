@@ -32,7 +32,7 @@ debug = False
 plot_need = True
 sr = 30
 stim_dur = 20
-setUp = 120
+setUp = 120 # seconds
 
 def cart2pol(x, y):
     phi = np.arctan2(y, x)
@@ -420,7 +420,7 @@ for l in range(len(r_log)):
         with open(reference_file, 'rb') as f:
             processed_data = pickle.load(f)
         
-        unclip = int(r_log['first prey'][l]) - setUp*sr
+        old_unclip = int(r_log['first prey'][l]) - 120*sr
 
 
         prey_snout_distance = processed_data['data'][3]
@@ -435,13 +435,13 @@ for l in range(len(r_log)):
             prey_trial_starts = prey_trial_starts[1:] # error where trial occured but not ttl registered by rwd. should save this trial somehow? 
             prey_trial_ends = prey_trial_ends[1:] # error where trial occured but not ttl registered by rwd. should save this trial somehow? 
                      
-        preyTrial_idx = np.sort(np.concatenate((prey_trial_starts, prey_trial_ends))) + unclip
+        preyTrial_idx = np.sort(np.concatenate((prey_trial_starts, prey_trial_ends))) + old_unclip
            
         # Detect where IR trials start and end
         valid = ~np.isnan(IR_snout_distance) # boolean mask
         IR_trial_starts = np.where(np.diff(valid.astype(int)) == 1)[0] + 1
         IR_trial_ends   = np.where(np.diff(valid.astype(int)) == -1)[0] + 1 - index_correction_factor
-        IRTrial_idx = np.sort(np.concatenate((IR_trial_starts, IR_trial_ends))) + unclip
+        IRTrial_idx = np.sort(np.concatenate((IR_trial_starts, IR_trial_ends))) + old_unclip
         
         
     
@@ -717,28 +717,45 @@ for l in range(len(r_log)):
         
         # Plot
         if plot_need == True:
-            plt.figure(figsize=(12, 6))
-            for i, (start, end) in enumerate(zip(trial_starts, trial_ends), 1):
-                if end-start > 600: # in case of IR trials lasting longer than 20 seconds
-                    end = start + 600
-                trial_dist = distance[start:end]
-                trial_time = np.arange(len(trial_dist))  # trial-relative time
-                plt.plot(trial_time, trial_dist, label=f"Trial {i}")
-                plt.plot(len(trial_time), trial_dist[-1], marker = 'D', color = 'k')
-            
-            plt.xlabel("Time (frames)")
-            plt.ylabel("Distance (mm)")
-            if t == 0:
-                plt.title("Snout to Prey Laser Distance per Trial\n  " +
-                          r_log['Date'][l] + str(r_log['ID'][l]))
-            else: 
-                plt.title("Snout to IR Laser Distance per Trial\n  " + 
-                          r_log['Date'][l] + str(r_log['ID'][l]))
-    
-            plt.legend()
-            boxoff()
-            plt.show()
-    
+             plt.figure(figsize=(12, 6))
+         
+             n_trials = len(trial_starts)
+         
+             # Choose colormap based on trial type
+             if t == 0:  # prey trials
+                 cmap = plt.cm.Greens
+             else:       # IR trials
+                 cmap = plt.cm.YlGnBu  # teal/blue-green
+         
+             # Generate gradient colors (dark → light)
+             colors = cmap(np.linspace(0.9, 0.3, n_trials))
+         
+             for i, ((start, end), color) in enumerate(zip(zip(trial_starts, trial_ends), colors), 1):
+                 if end - start > 600:  # cap long IR trials
+                     end = start + 600
+         
+                 trial_dist = distance[start:end]
+                 trial_time = np.arange(len(trial_dist))
+         
+                 plt.plot(trial_time, trial_dist, color=color, linewidth=2,
+                          label=f"Trial {i}")
+                 plt.plot(len(trial_time), trial_dist[-1],
+                          marker='D', color='black', markersize=6)
+         
+             plt.xlabel("Time (frames)")
+             plt.ylabel("Distance (mm)")
+         
+             if t == 0:
+                 plt.title("Snout to Prey Laser Distance per Trial\n"
+                           f"{r_log['Date'][l]}{r_log['ID'][l]}")
+             else:
+                 plt.title("Snout to IR Laser Distance per Trial\n"
+                           f"{r_log['Date'][l]}{r_log['ID'][l]}")
+         
+             plt.legend()
+             boxoff()
+             plt.show()
+
     
             # snout speed
             # plt.figure(figsize=(12, 6))
