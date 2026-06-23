@@ -6,26 +6,30 @@ Created on Wed Mar 26 15:45:00 2025
 """
 
 import numpy as np
-import pandas as pd
+# import pandas as pd
 import matplotlib.pyplot as plt
 import pickle
 from perm_test_array import perm_test_array
 # from bootstrap_data import bootstrap_data
 from bootstrap_data_bias_corrected import bootstrap_data
 from consec_idx import consec_idx
-from scipy.stats import ttest_rel, wilcoxon
+from scipy.stats import ttest_rel
 from boxoff import boxoff
-import statsmodels.formula.api as smf
+# import statsmodels.formula.api as smf
 
 
 
 
-nt = False
+nt = True
 initiate_aligned = True
 perm_testing = True # if u wanna test difference between two signals
 # site_specific = 'ZI-L' 
-trial_type = ['approach', 'IR'] #choose one or more trial type here ('approach', 'avoid', 'NR' )
-combine_hemispheres = True
+trial_type = ['approach', 'avoid'] #choose one or more trial type here ('approach', 'avoid', 'NR', ITI, IR )
+combine_hemispheres = False
+
+plot_speed = True
+
+calculate_auc = False
 
 sr = 30 # sampling rate, fps
 
@@ -49,32 +53,6 @@ thres = 5  # Consecutive threshold length
 pre = 5
 post = 25
 
-# PLOTTING SPEED
-# plt.figure()
-# plt.plot(np.nanmean(d['ITIspeed'], axis = 0), color=[0.6, 0.6, 0.6])
-# plt.fill_between(range(0,d['ITIspeed'].shape[1]),
-#                 ( np.nanmean(d['ITIspeed'], axis = 0) + np.nanstd(d['ITIspeed'], axis=0) / np.sqrt(len(d['ITIspeed']))),
-#                  (np.nanmean(d['ITIspeed'], axis = 0) - np.nanstd(d['ITIspeed'], axis=0) / np.sqrt(len(d['ITIspeed']))),
-#                  color=[0.6, 0.6, 0.6], alpha=0.3)
-     
-# plt.plot(np.nanmean(d['speedTrialsMov'], axis=0), color=[0.78, 0, 0])
-# plt.fill_between(range(0,d['speedTrialsMov'].shape[1]),
-#                 ( np.nanmean(d['speedTrialsMov'], axis = 0) + np.nanstd(d['speedTrialsMov'], axis=0) / np.sqrt(len(d['speedTrialsMov']))),
-#                  (np.nanmean(d['speedTrialsMov'], axis = 0) - np.nanstd(d['speedTrialsMov'], axis=0) / np.sqrt(len(d['speedTrialsMov']))),
-#                  color=[0.78, 0, 0], alpha=0.3)
-# ymin, ymax = plt.ylim()
-# plt.vlines(150, ymin=ymin, ymax=ymax, linestyle='--', color='black')
-# ax = plt.gca()
-# ax.set_xlim([50, 600])
-# plt.xlabel('Frames')
-# plt.ylabel('NT speed, mm/s')
-
-
-
-
-# tmp = np.where(perm_VR<0.05)[0]
-# id = tmp[consec_idx(tmp, thres)]
-# plt.plot(ts[id], 2 * np.ones((len(ts[id]), 2))-0.5, 's', markersize=7, markerfacecolor= [0.65, 0.65, 0.65], color=[0.65, 0.65, 0.65])
 
 data_list = [trialData]
 
@@ -109,6 +87,9 @@ trialData = data_list[0]
 for site, data in trialData.items():
     
     if site == 'ZI-both':
+        continue
+    
+    if 'MLR' not in site:
         continue
    
     plt.figure()
@@ -248,95 +229,185 @@ for site, data in trialData.items():
     # plt.savefig(f'{tankfolder}{site}_{trial_type}.png', transparent = True)
     plt.show()
     
-    # AUC comparison
-    for index, signal in enumerate(plot_data):
-        # Define baseline windows (in frames)
-        baseline1 = (-5, -2.5)
-        baseline2 = (-2.5, 0)
-        
-        # Get indices for each baseline
-        b1_idx = np.where((ts >= baseline1[0]) & (ts < baseline1[1]))[0]
-        b2_idx = np.where((ts >= baseline2[0]) & (ts < baseline2[1]))[0]
-        
-        # Time step (assumes uniform sampling)
-        dt = ts[1] - ts[0]
-        
-        # Compute AUC per trial
-        auc_b1 = np.trapz(signal[:, b1_idx], dx=dt, axis=1)
-        auc_b2 = np.trapz(signal[:, b2_idx], dx=dt, axis=1)
-        
-        # Store if you want later
-        # e.g. auc_results[site][trial_type[index]] = (auc_b1, auc_b2)
-        
-        plt.figure()
-        
-        # Colors for plotting
-        if trial_type[index] == 'approach':
-            plt_color = [0.47, 0.67, 0.19] #green
-        elif trial_type[index] == 'NR':
-            plt_color = [0.65, 0.65, 0.65] #grey
-        elif trial_type[index] == 'ITI' or trial_type[index] == 'IR':
-            plt_color = [0.416, 0.741, 0.741] #blue
-        else:
-            plt_color = [0.78, 0, 0] # red, avoid
+    
+    if calculate_auc:
+        # AUC comparison
+        for index, signal in enumerate(plot_data):
+            # Define baseline windows (in frames)
+            baseline1 = (-5, -2.5)
+            baseline2 = (-2.5, 0)
             
-        # Means and SEMs
-        means = [np.mean(auc_b1), np.mean(auc_b2)]
-        sems  = [
-            np.std(auc_b1) / np.sqrt(len(auc_b1)),
-            np.std(auc_b2) / np.sqrt(len(auc_b2))
-        ]
-        
-        # X positions
-        x = np.arange(2)
-        
-        # Bar plot
-        plt.bar(
-            x,
-            means,
-            yerr=sems,
-            color=plt_color,
-            alpha=0.8,
-            edgecolor='black',
-            capsize=5
-        )
-        for i in range(len(auc_b1)):
-            plt.plot(x, [auc_b1[i], auc_b2[i]], color='k', alpha=0.2, linewidth=0.8)
+            # Get indices for each baseline
+            b1_idx = np.where((ts >= baseline1[0]) & (ts < baseline1[1]))[0]
+            b2_idx = np.where((ts >= baseline2[0]) & (ts < baseline2[1]))[0]
+            
+            # Time step (assumes uniform sampling)
+            dt = ts[1] - ts[0]
+            
+            # Compute AUC per trial
+            auc_b1 = np.trapz(signal[:, b1_idx], dx=dt, axis=1)
+            auc_b2 = np.trapz(signal[:, b2_idx], dx=dt, axis=1)
+            
+            # Store if you want later
+            # e.g. auc_results[site][trial_type[index]] = (auc_b1, auc_b2)
+            
+            plt.figure()
+            
+            # Colors for plotting
+            if trial_type[index] == 'approach':
+                plt_color = [0.47, 0.67, 0.19] #green
+            elif trial_type[index] == 'NR':
+                plt_color = [0.65, 0.65, 0.65] #grey
+            elif trial_type[index] == 'ITI' or trial_type[index] == 'IR':
+                plt_color = [0.416, 0.741, 0.741] #blue
+            else:
+                plt_color = [0.78, 0, 0] # red, avoid
+                
+            # Means and SEMs
+            means = [np.mean(auc_b1), np.mean(auc_b2)]
+            sems  = [
+                np.std(auc_b1) / np.sqrt(len(auc_b1)),
+                np.std(auc_b2) / np.sqrt(len(auc_b2))
+            ]
+            
+            # X positions
+            x = np.arange(2)
+            
+            # Bar plot
+            plt.bar(
+                x,
+                means,
+                yerr=sems,
+                color=plt_color,
+                alpha=0.8,
+                edgecolor='black',
+                capsize=5
+            )
+            for i in range(len(auc_b1)):
+                plt.plot(x, [auc_b1[i], auc_b2[i]], color='k', alpha=0.2, linewidth=0.8)
+    
+            # Formatting
+            plt.xticks(x, ['-5 to -2.5 s', '-2.5 to 0 s'])
+            plt.ylabel('Baseline AUC')
+            plt.title(f'{site} | {trial_type[index]}')
+            
+            # Match your axis style
+            plt.gca().spines['top'].set_visible(False)
+            plt.gca().spines['right'].set_visible(False)
+            plt.gca().tick_params(axis='x', which='both', direction='out')
+            plt.gca().tick_params(axis='y', which='both', direction='out')
+            
+            boxoff()
+            plt.show()
+            
+            diff = auc_b2 - auc_b1
+            plt.hist(diff, bins=20)
+            plt.title('AUC difference distribution')
+            plt.show()
+            
+            import scipy.stats as stats
+            stats.probplot(diff, plot=plt)
+            plt.show()
+            from scipy.stats import shapiro
+            print(f'Normality test: {shapiro(diff)}')
+            
+            tstat, pval = ttest_rel(auc_b1, auc_b2)
+            print(f"  Paired t-test: t = {tstat:.3f}, p = {pval:.4e}")
+            
+            # df = pd.DataFrame({
+            #     'diff_auc': auc_b2 - auc_b1,
+            #     'animal': animal_ids   # same length as auc arrays
+            # })
+            
+            # model = smf.mixedlm("diff_auc ~ 1", df, groups=df["animal"])
+            # res = model.fit()
+            
+            # print(res.summary())
+            
+            
+# PLOTTING SPEED BY SITE
+if plot_speed:
 
-        # Formatting
-        plt.xticks(x, ['-5 to -2.5 s', '-2.5 to 0 s'])
-        plt.ylabel('Baseline AUC')
-        plt.title(f'{site} | {trial_type[index]}')
+    speedData = d['speedData']
+
+    for site, speed in speedData.items():
+
+        # Skip empty sites
+        if len(speed['speedTrialsMov']) == 0 or len(speed['ITIspeed']) == 0:
+            continue
+
+        plt.figure(figsize=(5,4))
         
-        # Match your axis style
-        plt.gca().spines['top'].set_visible(False)
-        plt.gca().spines['right'].set_visible(False)
-        plt.gca().tick_params(axis='x', which='both', direction='out')
-        plt.gca().tick_params(axis='y', which='both', direction='out')
+        if 'ITI' in trial_type:
+            # ITI
+            plt.plot(
+                ts,
+                np.nanmean(speed['ITIspeed'], axis=0),
+                color=[0.6, 0.6, 0.6],
+                label='ITI'
+            )
+    
+            plt.fill_between(
+                ts,
+                np.nanmean(speed['ITIspeed'], axis=0)
+                + np.nanstd(speed['ITIspeed'], axis=0)
+                / np.sqrt(len(speed['ITIspeed'])),
+    
+                np.nanmean(speed['ITIspeed'], axis=0)
+                - np.nanstd(speed['ITIspeed'], axis=0)
+                / np.sqrt(len(speed['ITIspeed'])),
+    
+                color=[0.6, 0.6, 0.6],
+                alpha=0.3
+            )
         
+        # if 'avoid' in trial_type:
+            
+            
+        # Approach and avoid movement
+        plt.plot(
+            ts,
+            np.nanmean(speed['speedTrialsMov'], axis=0),
+            color=[0.78, 0, 0],
+            label='Approach'
+        )
+
+        plt.fill_between(
+            ts,
+            np.nanmean(speed['speedTrialsMov'], axis=0)
+            + np.nanstd(speed['speedTrialsMov'], axis=0)
+            / np.sqrt(len(speed['speedTrialsMov'])),
+
+            np.nanmean(speed['speedTrialsMov'], axis=0)
+            - np.nanstd(speed['speedTrialsMov'], axis=0)
+            / np.sqrt(len(speed['speedTrialsMov'])),
+
+            color=[0.78, 0, 0],
+            alpha=0.3
+        )
+
+        ymin, ymax = plt.ylim()
+
+        plt.vlines(
+            0,
+            ymin=ymin,
+            ymax=ymax,
+            linestyle='--',
+            color='black'
+        )
+
+        plt.title(site)
+        plt.xlabel('Time (s)')
+        plt.ylabel('Speed (mm/s)')
+        plt.legend()
+
         boxoff()
+
         plt.show()
-        
-        diff = auc_b2 - auc_b1
-        plt.hist(diff, bins=20)
-        plt.title('AUC difference distribution')
-        plt.show()
-        
-        import scipy.stats as stats
-        stats.probplot(diff, plot=plt)
-        plt.show()
-        from scipy.stats import shapiro
-        print(f'Normality test: {shapiro(diff)}')
-        
-        tstat, pval = ttest_rel(auc_b1, auc_b2)
-        print(f"  Paired t-test: t = {tstat:.3f}, p = {pval:.4e}")
-        
-        # df = pd.DataFrame({
-        #     'diff_auc': auc_b2 - auc_b1,
-        #     'animal': animal_ids   # same length as auc arrays
-        # })
-        
-        # model = smf.mixedlm("diff_auc ~ 1", df, groups=df["animal"])
-        # res = model.fit()
-        
-        # print(res.summary())
+
+
+
+
+# tmp = np.where(perm_VR<0.05)[0]
+# id = tmp[consec_idx(tmp, thres)]
+# plt.plot(ts[id], 2 * np.ones((len(ts[id]), 2))-0.5, 's', markersize=7, markerfacecolor= [0.65, 0.65, 0.65], color=[0.65, 0.65, 0.65])

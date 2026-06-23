@@ -31,9 +31,10 @@ plot_speed_trials = False
 plot_trajectories = True
 
 recalc_freeze_times = False
+shuffle_trial_labels = True
 
-region = 'periaqueductal gray' # or
-# region = 'superior colliculus' # or
+# region = 'periaqueductal gray' # or
+region = 'superior colliculus' # or
 # region = 'retrosplenial'   # or 
 # region = 'midbrain'   
 
@@ -209,24 +210,6 @@ def mahalanobis_distance_trials(latent_A, latent_B):
 
     return dist
    
-
-# def permutation_test_mahalanobis(latent_A, latent_B, n_perm=1000):
-
-#     nA = latent_A.shape[0]
-#     combined = np.concatenate([latent_A, latent_B], axis=0)
-
-#     perm_dists = np.zeros((n_perm, latent_A.shape[1]))
-
-#     for p in range(n_perm):
-
-#         perm_idx = np.random.permutation(combined.shape[0])
-
-#         perm_A = combined[perm_idx[:nA]]
-#         perm_B = combined[perm_idx[nA:]]
-
-#         perm_dists[p] = mahalanobis_distance_trials(perm_A, perm_B)
-
-#     return perm_dists
     
 def perm_testing(pop_trials_A, pop_trials_B, pca_space, my_title, stim_trials, 
                  baseline_means = [], baseline_stds = []):
@@ -276,44 +259,6 @@ def perm_testing(pop_trials_A, pop_trials_B, pca_space, my_title, stim_trials,
     mean_dist = np.mean(all_distances, axis = 0) 
     sd_dist   = np.std(all_distances, axis = 0)
     
-    # n_perm = 1000
-    # perm_mean_dists = np.zeros((n_perm, len(time_centers)))
-    
-    # for p in range(n_perm): # not sure if this is correct
-    
-    #     perm_all_distances = []
-    
-    #     for r in range(n_repeats):
-    
-    #         pop_A = pop_trials_A[r]
-    #         pop_B = pop_trials_B[r]
-                
-    #         # concatenate trials
-    #         combined = np.concatenate([latent_trials_A[r], latent_trials_B[r]], axis=0)
-    #         nA = latent_trials_A[r].shape[0]
-    
-    #         # shuffle trial labels
-    #         perm_idx = np.random.permutation(combined.shape[0])
-    #         perm_A = combined[perm_idx[:nA]]
-    #         perm_B = combined[perm_idx[nA:]]
-    
-    #         dist = mahalanobis_distance_trials(perm_A, perm_B)
-    
-    #         # baseline = dist[baseline_mask] # which baseline to use?
-            
-    #         # baseline_mean = baseline.mean()
-    #         # baseline_std  = baseline.std()
-            
-    #         dist = (dist - baseline_mean) / baseline_std
-    
-    #         perm_all_distances.append(dist)
-    
-    #     perm_all_distances = np.array(perm_all_distances)
-    #     perm_mean_dists[p] = perm_all_distances.mean(axis=0)
-    
-        
-    # p_vals = np.mean(perm_mean_dists >= mean_dist, axis=0)
-    # sig_mask = p_vals < 0.05
     
     z_dists = np.array(all_distances)   # shape (200, time)
 
@@ -446,7 +391,8 @@ for sess in session_list:
     # find_field(sAP, 'vecIsActive')
     
     vecIsActive = sAP.cellBlock[0].vecIsActive
-
+    
+    print(f'{sum(vecIsActive)}')
 
     clusters = sAP.sCluster
 
@@ -766,6 +712,36 @@ if recalc_freeze_times:
 # -----------------------------
 # PCA — fit on all trials combined, project each type separately # change to gfpa!!!
 # -----------------------------
+if shuffle_trial_labels:
+
+    # Original lists
+    freeze = all_neuron_trials_freeze
+    nonfreeze = all_neuron_trials_nonfreeze
+    
+    # Store original sizes
+    freeze_sizes = [arr.shape[0] for arr in freeze]
+    nonfreeze_sizes = [arr.shape[0] for arr in nonfreeze]
+    
+    # Combine all trials
+    all_trials = np.concatenate(freeze + nonfreeze, axis=0)
+    
+    # Shuffle trials
+    np.random.shuffle(all_trials)
+    
+    # Split back
+    idx = 0
+    
+    all_neuron_trials_freeze = []
+    for size in freeze_sizes:
+        all_neuron_trials_freeze.append(all_trials[idx:idx+size])
+        idx += size
+    
+    all_neuron_trials_nonfreeze = []
+    for size in nonfreeze_sizes:
+        all_neuron_trials_nonfreeze.append(all_trials[idx:idx+size])
+        idx += size
+    
+
 population_freeze    = generate_population_trials_by_repeat(all_neuron_trials_freeze,    n_pop_trials, n_repeats)
 population_nonfreeze = generate_population_trials_by_repeat(all_neuron_trials_nonfreeze, n_pop_trials, n_repeats)
 
@@ -837,6 +813,37 @@ if plot_trajectories:
 #
 # response aligned
 #
+if shuffle_trial_labels:
+
+    # Original lists
+    freeze = all_neuron_trials_freeze_aligned
+    nonfreeze = all_neuron_trials_nonfreeze_shuff
+    
+    # Store original sizes
+    freeze_sizes = [arr.shape[0] for arr in freeze]
+    nonfreeze_sizes = [arr.shape[0] for arr in nonfreeze]
+    
+    # Combine all trials
+    all_trials = np.concatenate(freeze + nonfreeze, axis=0)
+    
+    # Shuffle trials
+    np.random.shuffle(all_trials)
+    
+    # Split back
+    idx = 0
+    
+    all_neuron_trials_freeze_aligned = []
+    for size in freeze_sizes:
+        all_neuron_trials_freeze_aligned.append(all_trials[idx:idx+size])
+        idx += size
+    
+    all_neuron_trials_nonfreeze_shuff = []
+    for size in nonfreeze_sizes:
+        all_neuron_trials_nonfreeze_shuff.append(all_trials[idx:idx+size])
+        idx += size    
+    
+  
+    
 population_freeze_aligned = generate_population_trials_by_repeat(
     all_neuron_trials_freeze_aligned,
     n_pop_trials,
@@ -895,24 +902,6 @@ latent_nonfreeze_shuff = get_latent(
     latent_dims
 )
 
-
-
-
-
-# plt.figure(figsize=(8,4))
-
-# plt.plot(time_centers, mean_dist, linewidth=2)
-# plt.fill_between(time_centers,
-#                  mean_dist - sd_dist,
-#                  mean_dist + sd_dist,
-#                  alpha=0.3)
-
-# plt.axvline(0, linestyle='--')
-# plt.xlabel('Time (s)')
-# plt.ylabel('Normalized distance (d)')
-# plt.title('Mean ± s.d. normalized trajectory distance')
-# plt.tight_layout()
-# plt.show()
 
 trajectory_freeze_aligned = latent_freeze_aligned.mean(axis=0)
 trajectory_nonfreeze_shuff = latent_nonfreeze_shuff.mean(axis=0)
@@ -977,60 +966,10 @@ if plot_trajectories:
     plt.show()
    
     
-# perm testing
+# perm testing on mahalonibis distance
 pre_stim_mean, pre_stim_std = perm_testing(population_freeze, population_nonfreeze, pca, 
              my_title = f'Stimulus aligned, {region}', stim_trials = True)
 
 perm_testing(population_freeze_aligned, population_nonfreeze_shuff, pca_align, 
              my_title = f'Response aligned, {region}', stim_trials = False,
              baseline_means = pre_stim_mean, baseline_stds = pre_stim_std)
-
-
-# distances 
-
-# real_dist = mahalanobis_distance_trials(
-#     latent_freeze_aligned,
-#     latent_nonfreeze_shuff
-# )
-
-# perm_dists = permutation_test_mahalanobis(
-#     latent_freeze_aligned,
-#     latent_nonfreeze_shuff,
-#     n_perm=1000
-# )
-
-# # get p values
-# p_vals = np.mean(perm_dists >= real_dist, axis=0)
-
-# # correct for spurious false positives via clustering 
-# alpha = 0.05
-# sig_mask = p_vals < alpha
-
-# # compute max cluster size under permutation
-# max_cluster_sizes = []
-
-# for p in range(perm_dists.shape[0]):
-#     perm_sig = perm_dists[p] >= np.percentile(perm_dists, 95, axis=0)
-    
-#     clusters = np.split(perm_sig, np.where(~perm_sig)[0])
-#     cluster_sizes = [len(c) for c in clusters if np.all(c)]
-    
-#     max_cluster_sizes.append(max(cluster_sizes) if len(cluster_sizes) > 0 else 0)
-
-# cluster_threshold = np.percentile(max_cluster_sizes, 95)
-
-# # plot results
-# plt.figure(figsize=(8,4))
-
-# plt.plot(time_centers, real_dist, color='black', linewidth=2)
-# plt.fill_between(time_centers,
-#                  np.percentile(perm_dists, 2.5, axis=0),
-#                  np.percentile(perm_dists, 97.5, axis=0),
-#                  alpha=0.3)
-
-# plt.axvline(0, linestyle='--')
-# plt.xlabel('Time (s)')
-# plt.ylabel('Mahalanobis distance')
-# plt.title('Freeze-aligned trajectory separation')
-# plt.tight_layout()
-# plt.show()

@@ -11,7 +11,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-nt = False
+nt = True
 
 # Define where the stuff is
 if nt == True:
@@ -19,13 +19,21 @@ if nt == True:
 else:
     tankfolder = r'\\vs03.herseninstituut.knaw.nl\VS03-CSF-1\Conrad\Innate_approach\Data_analysis\24.35.01\\freelymoving\\'
 
-siteList = ['ZI-L', 'ZI-R', 'SC-L', 'SC-R', 'SC to ZI-L', 'SC to ZI-R', 'PAG-L', 'PAG-R']
+siteList = ['ZI-L', 'ZI-R', 'SC-L', 'SC-R', 'SC to ZI-L', 'SC to ZI-R', 'PAG-L', 'PAG-R', 'MLR-L', 'MLR-R']
 
 allDat = [[] for _ in range(18)]
 trialDat = {site: {'approach': [], 'avoid': [], 'NR': [], 'IR': []} for site in siteList}  # Dictionary to separate data by site
 trialDat_laser_algn = {site: {'approach': [], 'avoid': [], 'NR': [], 'IR': []} for site in siteList}  # Dictionary to separate data by site
 lagDat = {site: {'approach': [], 'ITI': [], 'IR': []} for site in siteList}
 ITIDat = {site: {'ITI': []} for site in siteList}
+speedDat = {
+    site: {
+        'trialSpeed': [],
+        'speedTrialsMov': [],
+        'ITIspeed': []
+    }
+    for site in siteList
+}
 
 # Iterate through experiment folder
 files = [f for f in os.listdir(tankfolder) if f.endswith('.pkl') and f != 'allDatComb.pkl' and f != 'approach_times_since_trial_start.pkl' ]
@@ -38,7 +46,7 @@ for file in files:
         site = data.get('site', 'Error')  # Use 'Error' if site is missing
         
     
-        # print(f'{site}') 
+        print(f'{site}') 
         
         # Z-scored data
         allDat[0].append(data['ZdFoF'])
@@ -100,12 +108,31 @@ for file in files:
                 trialDat_laser_algn[site]['NR'].append(data['ZdFoFNR'])
 
         # Speed data
-        if (not np.isscalar(data['speedTrialsMov'])) and (np.sum(data['speedTrialsMov']) != 0):
-            allDat[3].append(data['speedTrials']) 
-            allDat[7].append(data['speedTrialsMov'][data['speedTrialsMov'][:, 0] != 0])
+        # if (not np.isscalar(data['speedTrialsMov'])) and (np.sum(data['speedTrialsMov']) != 0):
+        #     allDat[3].append(data['speedTrials']) 
+        #     allDat[7].append(data['speedTrialsMov'][data['speedTrialsMov'][:, 0] != 0])
             
+        # if (not np.isscalar(data['speedITI'])) and (np.sum(data['speedITI']) != 0):
+        #     allDat[5].append(data['speedITI'])
+        
+        # Speed data
+        if (not np.isscalar(data['speedTrialsMov'])) and (np.sum(data['speedTrialsMov']) != 0):
+        
+            allDat[3].append(data['speedTrials'])
+        
+            mov_data = data['speedTrialsMov'][data['speedTrialsMov'][:, 0] != 0]
+            allDat[7].append(mov_data)
+        
+            if site in speedDat:
+                speedDat[site]['trialSpeed'].append(data['speedTrials'])
+                speedDat[site]['speedTrialsMov'].append(mov_data)
+        
         if (not np.isscalar(data['speedITI'])) and (np.sum(data['speedITI']) != 0):
+        
             allDat[5].append(data['speedITI'])
+        
+            if site in speedDat:
+                speedDat[site]['ITIspeed'].append(data['speedITI'])
 
         # Traces for green and isosbestic channels
         allDat[1].append(data['Gdata'])
@@ -159,7 +186,21 @@ allDatComb = {
     'lag correlations': {site: {'approach': np.vstack(values['approach']) if values['approach'] else np.array([]),
                          'ITI': np.vstack(values['ITI']) if values['ITI'] else np.array([]),
                          'IR': np.vstack(values['IR']) if values['IR'] else np.array([])}
-                         for site, values in lagDat.items()}
+                         for site, values in lagDat.items()},
+    
+    # speed
+    'speedData': {site: {
+                        'trialSpeed': np.concatenate(values['trialSpeed'])
+                                      if values['trialSpeed'] else np.array([]),
+                
+                        'speedTrialsMov': np.vstack(values['speedTrialsMov'])
+                                          if values['speedTrialsMov'] else np.array([]),
+                
+                        'ITIspeed': np.concatenate(values['ITIspeed'])
+                                    if values['ITIspeed'] else np.array([])
+                    }
+                    for site, values in speedDat.items()
+                },
 }
 
 # Save combined data

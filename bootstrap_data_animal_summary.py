@@ -22,10 +22,12 @@ import os
 def build_filename(date, ID, channel):
     return f"{date}{ID} Channel {channel}.pkl"
 
-nt = False
+nt = True
 initiate_aligned = True
 # perm_testing = False # if u wanna test difference between two signals
-trial_type = ['approach', 'IR'] #choose one or more trial type here ('approach', 'avoid', 'NR' )
+trial_type = ['approach', 'ITI'] #choose one or more trial type here ('approach', 'avoid', 'NR', 'IR', 'ITI' )
+
+debug = True
 
 if nt:
     exp_type = 'nt'
@@ -34,7 +36,7 @@ else:
     
 filePath = 'W:\\Conrad\\Innate_approach\\Data_collection\\24.35.01\\'
 
-r_log = pd.read_csv(f"{filePath}\\recordinglog.csv", sep=None, engine="python", encoding='cp1252')
+r_log = pd.read_csv(f"{filePath}\\recordinglog.csv", sep=None, engine="python", encoding='utf-8-sig')
 r_log = r_log[r_log['Exp'] == exp_type]
 
 r_log = r_log[r_log['notes'] != 'no ttl alignment']
@@ -58,6 +60,11 @@ post = 25
 
 for ID in animal_ids:
     for site in sites:
+        
+        
+        if debug and ('MLR' not in site or 'ZI to MLR' in site):
+            continue
+        
         data__single_animal_site = []
         approach_data = []
         control_data = []
@@ -95,8 +102,13 @@ for ID in animal_ids:
     
         for item in data__single_animal_site:
             approach_data.append(item['ZdFoFApproach']) if not np.any(np.isnan(item['ZdFoFApproach'])) else True
+            
             if nt:
-                control_data.append(item['ZdFoFNR_yoked']) if not np.any(np.isnan(item['ZdFoFNR_yoked'])) else True
+                if trial_type[1] == 'NR':
+                    control_data.append(item['ZdFoFNR_yoked']) if not np.any(np.isnan(item['ZdFoFNR_yoked'])) else True
+                elif trial_type[1] == 'ITI':
+                    control_data.append(item['ZdFoFITI']) if not np.any(np.isnan(item['ZdFoFITI'])) else True
+
             else:
                 control_data.append(item['IR_ZdFoFApproach']) if not np.any(np.isnan(item['IR_ZdFoFApproach'])) else True
 
@@ -122,8 +134,10 @@ for ID in animal_ids:
         for index, signal in enumerate(plot_data):
             
             if len(signal) == 0:
-                print(f"No {trial_type[index]} trials for {ID} {site}")
+                print(f"No {trial_type[index]} trials for {ID} {site}\n")
                 continue
+            
+            print(f"{len(signal)} {trial_type[index]} trials\n")
             # # Bootstrapping
             # print('bootstrapping ...')
             # btsrp_app = bootstrap_data(signal, 10000, 0.0001)
