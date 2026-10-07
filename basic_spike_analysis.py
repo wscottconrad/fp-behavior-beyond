@@ -34,6 +34,8 @@ plot_resp = True
 analyze_modded = False # only analyze neurons that showed significant zeta results for stimulus onset or action onset (freezing during stim or ITI)
 plot_fraction_mod = False
 
+plot_zeta_vs_depth = False
+
 remove_units_low_variance = False
 
 perm_testing = True # default true
@@ -170,6 +172,182 @@ for region in collected_spikes:
     zeta_results = collected_spikes[region]['zeta_results']
     zeta_results = zeta_results[~np.isnan(zeta_results['stim_freeze_p'])] # filter out neurons with only 2 or less trials
     
+    if plot_zeta_vs_depth:
+        trial_types = [
+        "stim_all_p",
+        "stim_freeze_p",
+        "stim_nonfreeze_p",
+        "freeze_aligned_stim_p",
+        "freeze_aligned_ITI_p",
+        ]
+    
+        fig, axes = plt.subplots(1, len(trial_types),
+                                 figsize=(4*len(trial_types), 6),
+                                 sharey=True)
+        # plt.title(f'{region}')
+
+        for ax, trial in zip(axes, trial_types):
+            
+            # zeta_results["tmp_latency"] = zeta_results[trial].apply(
+            #     lambda x: x[0] if isinstance(x, tuple) else np.nan
+            # )
+            
+            # valid = zeta_results["tmp_latency"].notna()
+
+            ax.scatter(
+                np.array(zeta_results[trial]),
+                np.array(zeta_results["depth"]),
+                s=12,
+                alpha=0.6
+            )
+            # ax.set_xlim(-1,4)
+            ax.axvline(0.05, color='k', linestyle='--')
+            ax.set_title(trial.replace("_", "\n"))
+            ax.set_xlabel("ZETA p-value")
+            ax.invert_yaxis()       # deeper neurons lower on plot
+        
+        axes[0].set_ylabel("Depth (µm)")
+        plt.tight_layout()
+        plt.show()
+        
+        
+        # binned
+        
+        bin_size = 200  # µm
+        
+        # PROPORTIONAL
+        fig, axes = plt.subplots(
+        1, len(trial_types),
+        figsize=(4 * len(trial_types), 6),
+        sharey=True
+        )
+    
+        depth = np.array(zeta_results["depth"])
+    
+        # define bins across full depth range
+        dmin, dmax = np.nanmin(depth), np.nanmax(depth)
+        bins = np.arange(dmin, dmax + bin_size, bin_size)
+        bin_centers = (bins[:-1] + bins[1:]) / 2
+    
+        for ax, trial in zip(axes, trial_types):
+    
+            pvals = np.array(zeta_results[trial])
+            sig = pvals < 0.05
+    
+            # digitize depths into bins
+            bin_idx = np.digitize(depth, bins) - 1
+    
+            prop_sig = []
+            prop_nonsig = []
+    
+            for i in range(len(bins) - 1):
+                in_bin = bin_idx == i
+    
+                total = np.sum(in_bin)
+                if total == 0:
+                    prop_sig.append(np.nan)
+                    prop_nonsig.append(np.nan)
+                    continue
+    
+                n_sig = np.sum(sig[in_bin])
+                n_nonsig = total - n_sig
+    
+                prop_sig.append(n_sig / total)
+                prop_nonsig.append(n_nonsig / total)
+    
+            prop_sig = np.array(prop_sig)
+            prop_nonsig = np.array(prop_nonsig)
+    
+            ax.barh(bin_centers, prop_sig, height=bin_size * 0.9, label="sig", alpha=0.8)
+            ax.barh(
+                bin_centers,
+                prop_nonsig,
+                height=bin_size * 0.9,
+                left=prop_sig,
+                label="non-sig",
+                alpha=0.5
+            )
+    
+            ax.set_title(trial.replace("_", "\n"))
+            ax.set_xlabel("Proportion of neurons")
+            ax.invert_yaxis()
+    
+        axes[0].set_ylabel("Depth (µm)")
+        axes[0].legend()
+    
+        plt.tight_layout()
+        plt.show()
+        
+        
+        # TOTAL
+        fig, axes = plt.subplots(
+            1, len(trial_types),
+            figsize=(4 * len(trial_types), 6),
+            sharey=True
+        )
+    
+        depth = np.array(zeta_results["depth"])
+    
+        dmin, dmax = np.nanmin(depth), np.nanmax(depth)
+        bins = np.arange(dmin, dmax + bin_size, bin_size)
+        bin_centers = (bins[:-1] + bins[1:]) / 2
+    
+        for ax, trial in zip(axes, trial_types):
+    
+            pvals = np.array(zeta_results[trial])
+            sig = pvals < 0.05
+    
+            bin_idx = np.digitize(depth, bins) - 1
+    
+            sig_counts = []
+            nonsig_counts = []
+    
+            for i in range(len(bins) - 1):
+                in_bin = bin_idx == i
+    
+                total = np.sum(in_bin)
+                if total == 0:
+                    sig_counts.append(0)
+                    nonsig_counts.append(0)
+                    continue
+    
+                n_sig = np.sum(sig[in_bin])
+                n_nonsig = total - n_sig
+    
+                sig_counts.append(n_sig)
+                nonsig_counts.append(n_nonsig)
+    
+            sig_counts = np.array(sig_counts)
+            nonsig_counts = np.array(nonsig_counts)
+    
+            ax.barh(
+                bin_centers,
+                sig_counts,
+                height=bin_size * 0.9,
+                label="sig",
+                alpha=0.8
+            )
+    
+            ax.barh(
+                bin_centers,
+                nonsig_counts,
+                height=bin_size * 0.9,
+                left=sig_counts,
+                label="non-sig",
+                alpha=0.5
+            )
+    
+            ax.set_title(trial.replace("_", "\n"))
+            ax.set_xlabel("Neuron count")
+            ax.invert_yaxis()
+    
+        axes[0].set_ylabel("Depth (µm)")
+        axes[0].legend()
+    
+        plt.tight_layout()
+        plt.show()
+            
+    
     if analyze_modded:
         
         # find which neuron were modulated in any condition
@@ -298,36 +476,44 @@ for region in collected_spikes:
                 if 'mod' in name or name == 'fraction':
                     continue
                 
+                     
+                if 'Z_score' in name or 'Baseline' in name:
+                    continue
+                
+                if trial_type != 'all_neuron_trials_freeze' and trial_type != 'all_neuron_trials_nonfreeze':
+                    continue
                 
                 fig, ax = plt.subplots(figsize=(8, 6))
     
                 
                 
                 # Sort rows (neurons/components) by descending mean activity post event
-                if 'align' not in trial_type :
-                    sort_idx = np.argsort(np.mean(data[:,general_baseline:general_baseline+100], axis=1))[::-1]
-                    ax.set_ylabel("Neuron (sorted by mean activity, 2 seconds after event)")
+                # if 'align' not in trial_type :
+                #     sort_idx = np.argsort(np.mean(data[:,general_baseline:general_baseline+100], axis=1))[::-1]
+                #     ax.set_ylabel("Neuron (sorted by mean activity, 2 seconds after event)")
 
                     
-                else:
-                    # trying normalize step
-                    if name != 'Z_score':
-                        data = preprocessing.normalize(data, norm = 'max') # scales to unit norm
-                        
-                  
+                # else:
+                #     # trying normalize step
+                if name != 'Z_score':
+                    data = preprocessing.normalize(data) # scales to unit norm
                     
+                else:
+                    continue # skip z score plotting for now
+               
+                if trial_type == 'all_neuron_trials_freeze':
                     # Time of maximum activity for each neuron
                     peak_times = np.argmax(data, axis=1)
                     
                     # Sort neurons by when they reach their maximum activity
                     sort_idx = np.argsort(peak_times)
-                    
-                    
-                    # time = np.arange(data.shape[1])
-                    # center_of_mass = (data * time).sum(axis=1) / (data.sum(axis=1) + 1e-12)
-                    # sort_idx = np.argsort(center_of_mass)  
-                    
-                    ax.set_ylabel("Neuron (sorted by max normalized activity)")
+                
+                
+                # time = np.arange(data.shape[1])
+                # center_of_mass = (data * time).sum(axis=1) / (data.sum(axis=1) + 1e-12)
+                # sort_idx = np.argsort(center_of_mass)  
+                
+                ax.set_ylabel("Neuron (sorted by max normalized activity)")
 
                     
                 sorted_data = data[sort_idx]

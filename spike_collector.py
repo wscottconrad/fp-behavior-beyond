@@ -11,15 +11,16 @@ WORKING: calculate neuron responsiveness with ZETA
 
 # analysis parameters
 recalc_freeze_times = False
-calc_zeta = True
-calc_latenzy = True
+calc_zeta = False
+calc_latenzy = False
 
 remove_silent_neurons = False
 
 
-plot_speed_heatmap = False
+plot_speed_heatmap = True
 plot_avg_trial_and_ITI_freeze_speed = False
 plot_avg_trial_and_ITI_nonfreeze_speed = False
+plot_latency_vs_depth = False
 
 # regions = ['superior colliculus'] 
 
@@ -202,6 +203,9 @@ for region in regions:
             reader = csv.reader(f)
             pooled_freeze = [float(row[0]) for row in reader]
     
+    counter = 0 
+
+    
     for sess in session_list:
         mat = sio.loadmat(
             os.path.join(data_path, sess),
@@ -210,13 +214,9 @@ for region in regions:
         )
     
         sAP = mat['sAP']
-        
-        # find_field(sAP, 'vecIsActive')
-        
+                
         vecIsActive = sAP.cellBlock[0].vecIsActive
-        
-        # print(f'{sum(vecIsActive)}')
-    
+            
         clusters = sAP.sCluster
     
         is_good = np.array([c.KilosortGood for c in clusters]) # try no filtering
@@ -648,7 +648,6 @@ for region in regions:
         print(f'Number of recorded neurons this session: {sum(idx_keep)}')
         
         # zeta_results = []
-        counter = 0 
         
         for i, c in enumerate(clusters):
         
@@ -778,6 +777,7 @@ for region in regions:
                 })
                 
             if calc_latenzy:
+                
                 latenzy_inputs = {
                     'all_stim_latency': valid_stim_onset,
                     'stim_freeze_latency': freeze_event_times,
@@ -791,146 +791,10 @@ for region in regions:
                     all_zeta_results[counter][result_key] = latenzy(
                         c.SpikeTimes,
                         event_times,
-                        [-1, 4]
+                        [-1, 4],
+                        peak_alpha = 0.075
                     )
         
-       
-            
-            # fraction analysis skip for now
-            # if False:
-            #     sig_stim_all = df_zeta['stim_all_p'] < alpha_sig
-            #     sig_stim_freeze = df_zeta['stim_freeze_p'] < alpha_sig
-            #     sig_stim_nonfreeze = df_zeta['stim_nonfreeze_p'] < alpha_sig
-            #     sig_freeze_aligned_stim = df_zeta['freeze_aligned_stim_p'] < alpha_sig
-            #     sig_freeze_aligned_ITI = df_zeta['freeze_aligned_ITI_p'] < alpha_sig
-                
-            #     # any modulation
-            #     sig_any = (
-            #         sig_stim_all |
-            #         sig_stim_freeze |
-            #         sig_stim_nonfreeze |
-            #         sig_freeze_aligned_stim |
-            #         sig_freeze_aligned_ITI
-            #     )
-                
-            #     # no response
-            #     sig_none = ~sig_any
-                
-            #     # more categories
-            #     stim_freeze_only = sig_stim_freeze & ~sig_stim_nonfreeze
-            #     stim_nonfreeze_only = sig_stim_nonfreeze & ~sig_stim_freeze
-            #     stim_both = sig_stim_freeze & sig_stim_nonfreeze
-                
-            #     freeze_aligned_stim_only = sig_freeze_aligned_stim & ~sig_freeze_aligned_ITI
-            #     freeze_aligned_ITI_only = sig_freeze_aligned_ITI & ~sig_freeze_aligned_stim
-            #     freeze_both = sig_freeze_aligned_stim & sig_freeze_aligned_ITI
-                
-            #     true_mixed = sig_stim_nonfreeze + freeze_aligned_ITI_only
-                
-            #     # -----------------------------------
-            #     # fractions
-            #     # -----------------------------------
-                
-            #     # n_cells = len(df_zeta)
-                
-            #     fractions = {
-            #         'Stim all': sig_stim_all.mean(),
-            #         'Stim freeze': sig_stim_freeze.mean(),
-            #         'Stim nonfreeze': sig_stim_nonfreeze.mean(),
-            #         'Stim freeze aligned': sig_freeze_aligned_stim.mean(),
-            #         'ITI freeze aligned': sig_freeze_aligned_ITI.mean(),
-            #         'No response': sig_none.mean()
-            #     }
-                
-            #     counts = {
-            #         'Stim all': sig_stim_all.sum(),
-            #         'Stim freeze': sig_stim_freeze.sum(),
-            #         'Stim nonfreeze': sig_stim_nonfreeze.sum(),
-            #         'Stim freeze aligned': sig_freeze_aligned_stim.sum(),
-            #         'ITI freeze aligned': sig_freeze_aligned_ITI.sum(),
-            #         'No response': sig_none.sum()
-            #     }
-            
-    
-            # plt.figure(figsize=(7,4))
-            
-            # labels = list(fractions.keys())
-            # values = list(fractions.values())
-            
-            # bars = plt.bar(labels, values)
-            
-            # for bar, label in zip(bars, labels):
-            
-            #     count = counts[label]
-            
-            #     plt.text(
-            #         bar.get_x() + bar.get_width()/2,
-            #         bar.get_height() + 0.01,
-            #         f'n={count}',
-            #         ha='center'
-            #     )
-            
-            # plt.ylabel('Fraction of neurons')
-            # plt.ylim(0,1)
-            # plt.title(f'Overview of modulated neurons in {region}')
-            
-            # plt.tight_layout()
-            # plt.show()
-            
-            # ###
-            # # pi charts
-            # ###
-            
-            # colors = [
-            #     '#2fd7d9',
-            #     '#e6e21e',
-            #     '#832fd9'
-            #     ]
-            # # 
-            # sizes = [
-            #     stim_freeze_only.sum(),
-            #     stim_nonfreeze_only.sum(),
-            #     stim_both.sum()
-            # ]
-            
-            # labels = [
-            #     'Stim freeze only',
-            #     'Stim nonfreeze only',
-            #     'Both'
-            # ]
-            
-        
-            # plot_wedge(sizes, labels, colors, 'Stimulus-responsive neurons')
-            
-            
-            # sizes = [
-            #     freeze_aligned_stim_only.sum(),
-            #     freeze_aligned_ITI_only.sum(),
-            #     freeze_both.sum()
-            # ]
-            
-            # labels = [
-            #     'Freeze (stim) only',
-            #     'Freeze (ITI) only',
-            #     'Both'
-            # ]
-            
-        
-            # plot_wedge(sizes, labels, colors, 'Freeze-responsive neurons')
-            
-            # sizes = [
-            #     stim_nonfreeze_only.sum(),
-            #     freeze_aligned_ITI_only.sum(),
-            #     true_mixed.sum()
-            # ]
-            
-            # labels = [
-            #     'Stim nonfreeze only',
-            #     'Freeze (ITI) only',
-            #     'Both'
-            # ]
-            
-            # plot_wedge(sizes, labels, colors, 'Mixed neurons')
             
         
             counter += 1
@@ -959,6 +823,7 @@ for region in regions:
             rows.append({
                 'session': z['session'],
                 'cluster': z['cluster_idx'],
+                'depth': z['depth'],
         
                 'stim_all_p':
                     z['stim_all']
@@ -978,10 +843,27 @@ for region in regions:
         
                 'freeze_aligned_ITI_p':
                     z['freeze_aligned_ITI']
-                    if z['freeze_aligned_ITI'] else np.nan
+                    if z['freeze_aligned_ITI'] else np.nan,
+                    
+                'all_stim_latency':
+                    z['all_stim_latency'],
+                    
+                'stim_freeze_latency':
+                    z['stim_freeze_latency'],
+                    
+                'stim_nonfreeze_latency':
+                    z['stim_nonfreeze_latency'],
+                    
+                'freeze_aligned_latency':
+                    z['freeze_aligned_latency'],
+                    
+                'iti_freeze_latency':
+                    z['iti_freeze_latency']
             })
         
         df_zeta = pd.DataFrame(rows)
+    else:
+        df_zeta = np.nan
         
     collected_spikes[region] = {
             'all_neuron_trials_freeze': all_neuron_trials_freeze,
@@ -992,16 +874,61 @@ for region in regions:
             'all_neuron_trials_ITI_nonfreeze_shuff': all_neuron_trials_ITI_nonfreeze_shuff,
             'zeta_results': df_zeta
             }
-
     
-        
+    
+    
+    if plot_latency_vs_depth:
+        trial_types = [
+        "all_stim_latency",
+        "stim_freeze_latency",
+        "stim_nonfreeze_latency",
+        "freeze_aligned_latency",
+        "iti_freeze_latency",
+        ]
+    
+        fig, axes = plt.subplots(1, len(trial_types),
+                                 figsize=(4*len(trial_types), 6),
+                                 sharey=True)
+        # plt.title(f'{region}')
 
-# if not remove_silent_neurons:
-#     # Store data (serialize)
-#     with open(save_path + '\collected_spikes.pickle', 'wb') as handle:
-#         pickle.dump(collected_spikes, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        for ax, trial in zip(axes, trial_types):
+            
+            df_zeta["tmp_latency"] = df_zeta[trial].apply(
+                lambda x: x[0] if isinstance(x, tuple) else np.nan
+            )
+            
+            valid = df_zeta["tmp_latency"].notna()
+
+            ax.scatter(
+                df_zeta.loc[valid, "tmp_latency"],
+                df_zeta.loc[valid, "depth"],
+                s=12,
+                alpha=0.6
+            )
+            ax.set_xlim(-1,4)
+            ax.axvline(0, color='k', linestyle='--')
+            ax.set_title(trial.replace("_", "\n"))
+            ax.set_xlabel("Latency (s)")
+            ax.invert_yaxis()       # deeper neurons lower on plot
         
-# else:
-#     with open(save_path + '\collected_spikes_silent_neurons_filtered.pickle', 'wb') as handle:
-#         pickle.dump(collected_spikes, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        axes[0].set_ylabel("Depth (µm)")
+        plt.tight_layout()
+        plt.show()
+    
+    if not pd.isna(df_zeta):
+        sum(~np.isnan(df_zeta['freeze_aligned_stim_p']))  
+    
+        what = 0
+        for x in df_zeta['freeze_aligned_latency']:
+            if ~np.isnan(x[0]):
+                what += 1
+
+if not remove_silent_neurons:
+    # Store data (serialize)
+    with open(save_path + '\collected_spikes.pickle', 'wb') as handle:
+        pickle.dump(collected_spikes, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        
+else:
+    with open(save_path + '\collected_spikes_silent_neurons_filtered.pickle', 'wb') as handle:
+        pickle.dump(collected_spikes, handle, protocol=pickle.HIGHEST_PROTOCOL)
             

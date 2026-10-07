@@ -4,7 +4,7 @@ Created on Wed May 14 12:40:35 2025
 
 @author: conrad
 
-this code corrects fish-eye distortion from dlc data then converts it to real-
+if needed, this code corrects fish-eye distortion from dlc data then converts it to real-
 world coordinates (adapted from Alexander Heimel's matlab code)
                    
 data is then filtered out if there dlc gives low probability, if a point jumps 
@@ -23,13 +23,20 @@ import glob
 import matplotlib.pyplot as plt
 import pickle
 from scipy.interpolate import PchipInterpolator as pchip
+from scipy.ndimage import gaussian_filter1d
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.patches import Circle
 from boxoff import boxoff
+import os
 
 
 debug = False
-plot_need = True
+plot_need = False
+reanalyze = True
+
+plot_angles = False
+plot_traj = False
+
 sr = 30
 stim_dur = 20
 setUp = 120 # seconds
@@ -47,10 +54,13 @@ def pol2cart(phi, rho):
 
 def nt_change_overhead_to_camera_coordinates(overhead_x,overhead_y,params):
     distort = params['overhead_camera_distortion']
+    
+    distort_type = params['overhead_camera_distortion_method']
 
     overhead_x = overhead_x - params['overhead_camera_width']/2 + params['overhead_camera_image_offset'][0]
     overhead_y = overhead_y - params['overhead_camera_height']/2 + params['overhead_camera_image_offset'][1]
-    distance_neurotar_center_to_camera_mm = distort[0]
+    
+    distance_neurotar_center_to_camera_mm = distort[0] 
     focal_distance_pxl = distort[1]
 
     theta,overhead_r = cart2pol(overhead_x, overhead_y)
@@ -60,9 +70,16 @@ def nt_change_overhead_to_camera_coordinates(overhead_x,overhead_y,params):
         overhead_r[overhead_r > focal_distance_pxl] = focal_distance_pxl
         camera_x = np.nan
         camera_y = np.nan
+     
+    if distort_type == 'fisheye_othographic':
+        camera_r = distance_neurotar_center_to_camera_mm * np.tan(np.arcsin(overhead_r / focal_distance_pxl))
         
-    camera_r = distance_neurotar_center_to_camera_mm * np.tan(np.arcsin(overhead_r / focal_distance_pxl))
+    else:
+        camera_r = distance_neurotar_center_to_camera_mm * overhead_r / focal_distance_pxl
+        
+        
     camera_x, camera_y = pol2cart(theta, camera_r)
+    
     return(camera_x, camera_y)
 
 def nt_change_camera_to_arena_coordinates(camera_x,camera_y,params):
@@ -114,6 +131,90 @@ def find_distance(item1, item2):
     distance = distance.reset_index(drop = True)
     return distance
 
+def calculate_angle(df1, df2, df3):
+    """
+    Calculates the signed angle ABC for every timestamp in df3. 
+    
+    Parameters
+    ----------
+    df1, df2, df3 : pandas.DataFrame
+        Must contain time, x, y columns.
+        df3 may have fewer timestamps.
+        
+    df1 should be snout, df2 should be hrB, and df3 could be back1 or laser
+
+    Returns
+    -------
+    DataFrame
+        df3 with an added 'angle_deg' column.
+    """
+    merged = (
+        df1.join(df2, how="inner", lsuffix="_1", rsuffix="_2")
+           .join(df3, how="inner")
+    )
+
+    # Extract x,y coordinates from each dataframe
+    A = df1.columns[0][0]
+    B = df2.columns[0][0]
+    C = df3.columns[0][0]
+
+    Ax = merged[(A, "x")]
+    Ay = merged[(A, "y")]
+
+    Bx = merged[(B, "x")]
+    By = merged[(B, "y")]
+
+    Cx = merged[(C, "x")]
+    Cy = merged[(C, "y")]
+
+    BAx = Ax - Bx
+    BAy = Ay - By
+
+    BCx = Cx - Bx
+    BCy = Cy - By
+
+    cross = BAx * BCy - BAy * BCx
+    dot = BAx * BCx + BAy * BCy
+
+    merged["angle_deg"] = np.degrees(np.arctan2(cross, dot))
+
+    return merged[["angle_deg"]]
+
+def plot_angles_trials(angles, relative, plot_angles, bout_id = np.nan):
+    if plot_angles:
+        
+        if not relative: 
+            bout_id = (angles.index.to_series().diff() > 1).cumsum()
+            
+        angles["bout"] = bout_id
+        plt.figure(figsize=(8,5))
+
+        for _, bout in angles.groupby("bout"):
+            x = np.arange(len(bout))      # 0,1,2,...
+            # y = bout["angle_deg"]
+            y = gaussian_filter1d(bout["angle_deg"],1) # light smoothing
+            plt.plot(x, y, alpha=0.7)
+        
+        plt.xlabel("Frames since bout start")
+        plt.ylabel("Signed angle (°)")
+        plt.show()
+        
+        return bout_id
+
+def speed_calculator(x,y):
+
+    displacement = (np.array([x[:-1], 
+                          y[:-1]]) - 
+                 np.array([x[1:], 
+                          y[1:]]))
+    
+    distance = np.sqrt(displacement[0]**2 + 
+                             displacement[1]**2)
+    frame_to_sec = 1/sr
+    speed = distance/frame_to_sec/1000 # speed is m/s
+    
+    return speed
+
 def my_heatplot(data, title, bins=100):
     colors = [(0, 0, 1), (0, 1, 1), (0, 1, 0.75), (0, 1, 0), (0.75, 1, 0),
               (1, 1, 0), (1, 0.8, 0), (1, 0.7, 0), (1, 0, 0)]
@@ -164,6 +265,7 @@ def my_trajectory(data, title):
 #dlc_filePath = 'W:\\vs03.herseninstituut.knaw.nl\\VS03-CSF-1\\Conrad\\Innate_approach\\Data_analysis\\24.35.01\\DLC'
 dlc_filePath = 'W:\\Conrad\\Innate_approach\\Data_analysis\\24.35.01\\DLC'
 dlc_savePath = 'W:\\Conrad\\Innate_approach\\Data_analysis\\24.35.01\\DLC'
+file_list = os.listdir(dlc_savePath)
 
 
 fp_filePath = 'W:\\Conrad\\Innate_approach\\Data_collection\\24.35.01\\'
@@ -183,12 +285,11 @@ r_log = pd.read_csv(f"{fp_filePath}\\recordinglog.csv", sep=None, engine="python
 # r_log = pd.read_csv(f"{fp_filePath}\\recordinglog.csv", sep=None, engine="python", encoding='cp1252') 
 # r_log.columns = r_log.columns.str.replace('\ufeff', '').str.strip()
 
-# filter for freelymovingLaser & temporarily just the days that i analyzed for now
-if debug == False:
+if not debug:
     r_log = r_log[r_log['Exp']=='fm laser'].reset_index()
     r_log = r_log[:-1] #temp filter for bad recording session
 else: 
-    r_log = r_log[35:36].reset_index()
+    r_log = r_log[r_log['ID']==118580].reset_index()
    
 
 
@@ -219,18 +320,38 @@ params = {
 
 # first we need to correct fish-eye distrotion in dlc data and convert to real world coordinates
 for l in range(len(r_log)):
-
+    
+    if l != 47:
+        continue
+    
+    animal_id = str(int(r_log['ID'][l]))
+    date = str(r_log['Date'][l]).replace('_', '')
+    
+    
     # if l == 47:
     #     continue
  
-    # l = 13
+    #skip over analyzed data
+    if not reanalyze:
+        if f"{r_log['Date'][l]}{animal_id} DLC.pkl" in file_list:
+            continue
+    
+    if r_log['first prey'][l] == "don't analyze":
+        continue
+    
+    if r_log['added to dlc'][l] != 'added' and not pd.isna(r_log['added to dlc'][l]):
+        continue
  
-    record = [entry for entry in db if str(r_log['ID'][l]) in str(entry.subject)
+    record = [entry for entry in db if str(int(animal_id)) in str(entry.subject)
                and str(r_log['Date'][l]).replace('_','-')[:-1] in str(entry.date)][0]
+    
     params['overhead_arena_center'] = record.measures.overhead_arena_center
     
-    animal_id = str(r_log['ID'][l])
-    date = str(r_log['Date'][l]).replace('_', '')
+    if '2025' in date or '2024' in date:
+        params['overhead_camera_distortion_method'] = 'fisheye_orthographic'
+    else:
+        params['overhead_camera_distortion_method'] = 'normal'
+
     
     #accidentally indexed wrong on second batch, this fixes it
     if int(date) >= 20250512:
@@ -240,14 +361,23 @@ for l in range(len(r_log)):
 
     print(f"________________________________________________\nCurrent run: {date}{animal_id}\n------------------------------------------------")
     
-    dlcAnimal = f"{dlc_filePath}\\{str(r_log['ID'][l])}_{str(r_log['Date'][l]).replace('_', '')}*fmLaserMouseFP*.csv"
+    if '2025' in date:
+        dlcAnimal = f"{dlc_filePath}\\{animal_id}_{str(r_log['Date'][l]).replace('_', '')}*fmLaserMouseFP*.csv" #old model with fisheye
+    else:
+        dlcAnimal = f"{dlc_filePath}\\{animal_id}_{str(r_log['Date'][l]).replace('_', '')}*fJul2*.csv" # updated model (no fisheye)
+
+
     if "filtered" in dlcAnimal:
-        print('Usiing filtered data, gross, dont do that, youre alreday filetering')
-    dlcPrey = f"{dlc_filePath}\\{str(r_log['ID'][l])}_{str(r_log['Date'][l]).replace('_', '')}*prey*.csv"
-    dlcIR = f"{dlc_filePath}\\{str(r_log['ID'][l])}_{str(r_log['Date'][l]).replace('_', '')}*IR*.csv"
+        print('Using filtered data! You must reanalyze since youre already filtering in this script')
+        
+    dlcPrey = f"{dlc_filePath}\\{animal_id}_{str(r_log['Date'][l]).replace('_', '')}*prey*.csv"
+    dlcIR = f"{dlc_filePath}\\{animal_id}_{str(r_log['Date'][l]).replace('_', '')}*IR*.csv"
     
-    ttlFile = f"{ntFilePth}{str(r_log['ID'][l])}_{str(r_log['Date'][l]).replace('_', '')}_01_ttl"
+    ttlFile = f"{ntFilePth}{animal_id}_{date}_01_ttl"
     ttl = pd.read_csv(ttlFile)
+    
+    if '2025' not in date: # all recieved triggers is noise
+        ttl = ttl.loc[ttl['Event'] !='Received trigger'].reset_index(drop = True)
     
     if ttl['Event'][0] == 'Received trigger':
         
@@ -278,27 +408,73 @@ for l in range(len(r_log)):
         
     elif isinstance(r_log['Failed'][l], str) and len(r_log['Failed'][l]) == 1:
         fIdx = np.array(int(r_log['Failed'][l]))
-
+        
+    elif isinstance(r_log['Failed'][l], str) and len(r_log['Failed'][l]) > 1:
+        fIdx = np.array(list(map(int, str(r_log['Failed'][l]).split('.'))))
+    
+        
+    
+    if ('optogenetics' == ttl['Event']).any(): 
+        if sum('optogenetics' == ttl['Event']) < 6:
+            print('Mix of "p" and "b" laser presses detected, you need to edit something.') # as of 17/7/26 this case not detected :) 
+        expand = 3
+        
+    else:
+        expand = 2
+        
+        
     if fIdx.size == 1:
-        expanded_fIdx = [fIdx*3 +offset for offset in range(3)]
+        expanded_fIdx = [fIdx*expand +offset for offset in range(expand)]
     else: 
-        expanded_fIdx = [i + offset for i in fIdx*3 for offset in range(3)]
+        expanded_fIdx = [i + offset for i in fIdx*expand for offset in range(expand)]
     
     ttl = ttl.drop(expanded_fIdx, axis = 0).reset_index(drop = True)    
         
-    ttl = ttl['Time'][::3]           
+    ttl = ttl['Time'][::expand]           
     
 
     cam_ttl_file = f"{fp_filePath}{animal_id}\\{animal_id}_{date}_001\\{animal_id}_{date}_001_pioverhead_triggers.csv"
     cam_ttl_file_df = pd.read_csv(cam_ttl_file)
+    
+    # camttl updated several times, this code catches the first sync pulse
     if 'ttl source' in cam_ttl_file_df.columns:
-        if (cam_ttl_file_df['ttl source'] == 'neurotar').any():
-            start_frame = cam_ttl_file_df.loc[
-                cam_ttl_file_df['ttl source'] == 'neurotar',
-                'frame'
-            ].iloc[0]
-        else:
-            start_frame = cam_ttl_file_df['frame'][1]
+        
+        if 'input type' in cam_ttl_file_df.columns:
+            recieve_pulses = cam_ttl_file_df[cam_ttl_file_df['input type'] == 'recieved']
+
+            if '2025' in date: # for when i still used nt program to send initial sync
+                if (cam_ttl_file_df['ttl source'] == 'neurotar').any():
+                    
+                    start_frame = recieve_pulses.loc[
+                        recieve_pulses['ttl source'] == 'neurotar',
+                        'frame'
+                    ].iloc[0]
+                else:
+                    start_frame = recieve_pulses['frame'][1]
+                    
+            else: 
+                start_frame = recieve_pulses.loc[
+                    recieve_pulses['ttl source'] == 'sync_ttl',
+                    'frame'
+                ].iloc[0]
+                
+        else: 
+            print('input type not found')
+            if '2025' in date: # for when i still used nt program to send initial sync
+                if (cam_ttl_file_df['ttl source'] == 'neurotar').any():
+                    start_frame = cam_ttl_file_df.loc[
+                        cam_ttl_file_df['ttl source'] == 'neurotar',
+                        'frame'
+                    ].iloc[0]
+                else:
+                    start_frame = cam_ttl_file_df['frame'][1]
+                    
+            else: 
+                start_frame = cam_ttl_file_df.loc[
+                    cam_ttl_file_df['ttl source'] == 'sync_ttl',
+                    'frame'
+                ].iloc[0]
+                    
     else:
         start_frame = pd.read_csv(cam_ttl_file).index[1]
     
@@ -309,6 +485,11 @@ for l in range(len(r_log)):
     for i in range(len(df_list)):
         
         df_path = glob.glob(df_pathList[i])
+        
+        if len(df_path) == 0:
+            print('No data found, skipping')
+            continue
+        
         df = pd.read_csv(df_path[0], header =None, low_memory=False)
         df = df.iloc[:,1:]     # removes pointless 1st column
         df_list[i] = df 
@@ -321,7 +502,11 @@ for l in range(len(r_log)):
                 index_col=0,
                 low_memory=False)
             
-            animal_out_of_view_index = list(map(int, r_log['animal hidden frames'][l].split(',')))
+            if not pd.isna(r_log['animal hidden frames'][l]): 
+                animal_out_of_view_index = list(map(int, r_log['animal hidden frames'][l].split(',')))
+                
+            else:
+                animal_out_of_view_index = []
             
             N = len(dlc_df)
             final_segments = []
@@ -358,9 +543,9 @@ for l in range(len(r_log)):
                     overhead_y = pd.to_numeric(bp_cols.xs('y', level=2, axis=1).iloc[:,0], errors='coerce').values
                     
                     likelihood = bp_cols.xs('likelihood', level=2, axis=1).iloc[:,0].values
-            
+                    
                     arena_x, arena_y = nt_change_overhead_to_arena_coordinates(
-                        overhead_x, overhead_y, params, centered_desired = False
+                        overhead_x, overhead_y, params, centered_desired = False, 
                     )
                     
                     # Add columns in x, y, likelihood order
@@ -396,27 +581,15 @@ for l in range(len(r_log)):
                     file_name = file_name + suffix_list[i]
                 kpms_file = dlc_savePath + file_name + '.csv'
                 
-                cor_dlc.to_csv(kpms_file)
-
-   # Check the saved file
-# test_df = pd.read_csv(kpms_file, header=[0,1,2], index_col=0)
-# print("Column structure check:")
-# print(test_df.columns[:9])  # First 3 bodyparts
-# print("\nCoords level values:")
-# print(test_df.columns.get_level_values(2).unique())
-# print("\nFirst bodypart columns:")
-# first_bp = test_df.columns.get_level_values(1).unique()[0]
-# print(test_df.loc[:, (slice(None), first_bp, slice(None))].columns)                
+                cor_dlc.to_csv(kpms_file)              
                     
     
     preyTrial_idx_filled = []
     IRTrial_idx_filled = []
     
-    
-        
-    
-    if np.isnan(r_log['prey trial times'][l]): # in the earlier cases for when r_log got corrupted
-        reference_file = f"{dlc_savePath}\\{r_log['Date'][l]}{r_log['ID'][l]} DLC.pkl" 
+  
+    if pd.isna(r_log['prey trial times'][l]) and '2025' in date: # in the earlier cases for when r_log got corrupted
+        reference_file = f"{dlc_savePath}\\backup\\{r_log['Date'][l]}{animal_id} DLC.pkl" 
         with open(reference_file, 'rb') as f:
             processed_data = pickle.load(f)
         
@@ -467,7 +640,7 @@ for l in range(len(r_log)):
     if len(preyTrial_idx_filled) != len(df_list[1])-3:
         # raise ValueError(f"Index length {len(preyTrial_idx_filled)} does not match prey length {len(df_list[1])}")
         print(f"Index length {len(preyTrial_idx_filled)} does not match prey length {len(df_list[1])-3}")
-        print('Either DLC dropped frames (rerun) or you need to check video times in recording log')
+        print('Either DLC dropped frames (rerun, unlikely) or you need to check video times in recording log')
         continue
     
 
@@ -497,28 +670,23 @@ for l in range(len(r_log)):
         # general data clipping:
         if i == 0: 
             raw_dlc = raw_dlc[start_frame:].reset_index(drop = True) # clips to syncing start pulse
-            if l == 47:
-                trim_start = preyTrial_idx_filled[0] - start_frame - 20*sr
-            else:
-                trim_start = preyTrial_idx_filled[0] - start_frame - setUp*sr
-            # trim_start = 0
+            # if l == 47:
+            #     trim_start = preyTrial_idx_filled[0] - start_frame - 20*sr
+            # else:
+            trim_start = preyTrial_idx_filled[0] - start_frame - setUp*sr
+            trim_factor = preyTrial_idx_filled[0] - setUp*sr
+
+            if trim_start < 0:   
+                trim_start = preyTrial_idx_filled[0] - start_frame - 6*sr
+                trim_factor = preyTrial_idx_filled[0] -6*sr
+                 
             trim_end = len(raw_dlc)-5*sr
             raw_dlc = raw_dlc[trim_start:trim_end].reset_index(drop = True)
-        if l == 47:
-            trim_factor = preyTrial_idx_filled[0] -20*sr
-        else:
-            trim_factor = preyTrial_idx_filled[0] - setUp*sr
+
         if i == 1:
             raw_dlc.index = [x - trim_factor for x in preyTrial_idx_filled]
         elif i == 2:
             raw_dlc.index = [x - trim_factor for x in IRTrial_idx_filled]
-            
-            
-        
-        # raw_dlc = raw_dlc[3:].reset_index(drop = True)
-        
-        # passes data through distortion correction
-        #cor_dlc = pd.DataFrame(np.zeros(raw_dlc.shape))
         
                 
         # for trial info, uncropped
@@ -556,14 +724,26 @@ for l in range(len(r_log)):
                 
                 
                 
-                # filter out out of arena, with some leeway (3cm)
+                # filter out out of arena, with some leeway (6cm)
                 dist_from_center = np.sqrt(arena_x**2 + 
                                            arena_y**2)
                 
-                outside_circle = dist_from_center > params['arena_radius_mm'] + 30
+                outside_circle = dist_from_center > params['arena_radius_mm'] + 60 # 6cm, changed from 3cm 3/7/26 because sometimes arena got moved during session
+                
+                # frames = np.arange(len(outside_circle))
+
+                # plt.figure(figsize=(12, 2))
+                # plt.scatter(frames[outside_circle],
+                #             np.ones(outside_circle.sum()),
+                #             s=2)
+                # plt.yticks([])
+                # plt.xlabel("Frame")
+                # plt.title("Frames outside the arena")
                 
                 # num_nans_added = np.sum(outside_circle)
                 # print(f"Number of out of arena: {num_nans_added}")
+                
+                
                 
                 arena_x[outside_circle] = np.nan
                 arena_y[outside_circle] = np.nan
@@ -584,49 +764,88 @@ for l in range(len(r_log)):
                 arena_y[mask] = np.nan
                 
                 # interpolate
-                
-                #####
-                # should change interpolation code for laser trials?
-                #####
+            
                 
                 ts= np.arange(len(arena_x))
                 mask = ~np.isnan(arena_x)
-                # arena_x_func = interp1d(ts[mask], arena_x[mask], kind= 'slinear', fill_value="extrapolate")
                 arena_x_func = pchip(ts[mask], arena_x[mask], extrapolate = True)
                 arena_x = arena_x_func(ts)
           
-                # arena_y_func = interp1d(ts[mask], arena_y[mask], kind= 'slinear', fill_value="extrapolate")
                 arena_y_func = pchip(ts[mask], arena_y[mask], extrapolate = True)
                 arena_y = arena_y_func(ts)
 
 
-                # plt.figure()
-                # plt.plot(arena_y)
-                # plt.title('y after interpolation: ' + bodypart)
-
                 # Add transformed and filtered coordinates
                 cor_dlc[(bodypart, 'x')] = arena_x
                 cor_dlc[(bodypart, 'y')] = arena_y
-                # cor_dlc[(bodypart, 'likelihood')] = raw_dlc[bodypart]['likelihood'].values
+                cor_dlc[(bodypart, 'likelihood')] = raw_dlc[bodypart]['likelihood'].values
                 
         
             except KeyError:
                 print(f"Skipping {bodypart}: missing expected columns")
                 
         df_list[i] = cor_dlc
-                
-    # calculate snout to laser distance (s2l) for prey
-    # TO DO: angle of head to laser, and angle of head to body 
     
-    snout_displacement = (np.array([df_list[0][('snout','x')][:-1], 
-                          df_list[0][('snout','y')]][:-1]) - 
-                 np.array([df_list[0][('snout','x')][1:], 
-                          df_list[0][('snout','y')][1:]]))
     
-    snout_distance = np.sqrt(snout_displacement[0]**2 + 
-                             snout_displacement[1]**2)
-    frame_to_sec = 1/sr
-    snout_speed = snout_distance/frame_to_sec/1000 # speed is m/s
+    
+    # flag periods where animal is likely out of frame (due to untangling of fibers, etc)
+    likelihood_threshold = 0.8
+    min_out_of_view_duration = 30  # seconds
+    min_out_of_view_frames = min_out_of_view_duration * sr
+    
+    snout_prob = pd.to_numeric(df_list[0][('snout', 'likelihood')], errors='coerce').values
+    hrC_prob   = pd.to_numeric(df_list[0][('hrC', 'likelihood')], errors='coerce').values
+    tailBase_prob   = pd.to_numeric(df_list[0][('tailBase', 'likelihood')], errors='coerce').values
+    
+    # Frame is suspicious if all three keypoints have low likelihood
+    # probably_out_of_view = (
+    #     (snout_prob < likelihood_threshold) &
+    #     (hrC_prob < likelihood_threshold) &
+    #     (tailBase_prob < likelihood_threshold)
+    # )
+    
+    # plt.figure()
+    # plt.plot(list(range(0,len(snout_prob))), snout_prob)
+    # plt.plot(list(range(0,len(snout_prob))), hrC_prob)
+    # plt.plot(list(range(0,len(snout_prob))), tailBase_prob)
+    # plt.show()
+    
+    probably_out_of_view = (
+        (np.vstack([snout_prob, hrC_prob, tailBase_prob]) < likelihood_threshold)
+        .sum(axis=0)
+        >= 2
+    )
+    
+    # Find starts and ends of continuous low-likelihood periods
+    changes = np.diff(probably_out_of_view.astype(int))
+    
+    starts = np.where(changes == 1)[0] + 1
+    ends   = np.where(changes == -1)[0] + 1
+    
+    # Handle a run that starts at frame 0
+    if probably_out_of_view[0]:
+        starts = np.r_[0, starts]
+    
+    # Handle a run that continues to the final frame
+    if probably_out_of_view[-1]:
+        ends = np.r_[ends, len(probably_out_of_view)]
+    
+    # Keep only periods >= 30 seconds
+    out_of_view_periods = [
+        (start, end)
+        for start, end in zip(starts, ends)
+        if end - start >= min_out_of_view_frames
+    ]
+    
+    print(f'{len(out_of_view_periods)} out of view periods detected')
+       
+
+
+         
+    # calculate snout to laser distance (s2l) for prey    
+    snout_speed = speed_calculator(df_list[0][('snout','x')], df_list[0][('snout','y')])
+    hrC_speed = speed_calculator(df_list[0][('hrC','x')], df_list[0][('hrC','y')])
+    tail_speed = speed_calculator(df_list[0][('tailBase','x')], df_list[0][('tailBase','y')])
     
     
     # snout to prey laser distance
@@ -640,7 +859,6 @@ for l in range(len(r_log)):
 
     distances_trials = [d_prey, d_IR]  
 
-    
     # calculate angle from head to snout 
     # create triangle
     
@@ -652,18 +870,39 @@ for l in range(len(r_log)):
 
     hr_midpoint = pd.DataFrame((hrL_pos.values + hrR_pos.values) / 2)
 
-    
     # my_heatplot(snout_pos.iloc[30:, :], 'snout_pos')
     # my_heatplot(hrL_pos.iloc[30:, :], 'hrL position')
     # my_trajectory(hr_midpoint.iloc[30:, :], 'midpoint position')
-    my_trajectory(snout_pos.iloc[30:, :], f' {date} {animal_id} snout position')
-
     
+    if plot_traj:
+        my_trajectory(snout_pos.iloc[30:, :], f' {date} {animal_id} snout position')
+
         
     snout2left_distance = find_distance(hrL_pos, snout_pos)
     snout2right_distance = find_distance(hrR_pos, snout_pos)
     hr_dis = find_distance(hrL_pos, hrR_pos)
     ear_dis = find_distance(earL_pos, earR_pos)
+    
+    # angle calculations
+    hrB_pos =  df_list[0][[('hrB','x'), ('hrB','y')]]
+    back1_pos =  df_list[0][[('back1','x'), ('back1','y')]]
+
+    prey_orientation = calculate_angle(snout_pos, hrB_pos, preyLaser_pos)
+    prey_bouts = plot_angles_trials(prey_orientation, False, plot_angles)
+    
+    IR_orientation = calculate_angle(snout_pos, hrB_pos, IRLaser_pos)
+    IR_bouts = plot_angles_trials(IR_orientation, False, plot_angles)
+
+    relative_head_angle = calculate_angle(snout_pos, hrB_pos, back1_pos)
+    relative_head_angle['angle_deg'] = (relative_head_angle["angle_deg"] % 360) - 180
+    plot_angles_trials(relative_head_angle, True, plot_angles, prey_bouts)
+    plot_angles_trials(relative_head_angle, True, plot_angles, IR_bouts)
+    
+    head_angles = {
+        'rel_to_prey': prey_orientation,
+        'rel_to_IR': IR_orientation,
+        'rel_to_self': relative_head_angle}
+
 
     if (snout2left_distance > 30).any() or (snout2right_distance > 30).any():
         print("snout distance too far, you need to correct it post interpolation")
@@ -683,24 +922,29 @@ for l in range(len(r_log)):
         trial_starts = np.where(np.diff(valid.astype(int)) == 1)[0] + 1
         trial_ends   = np.where(np.diff(valid.astype(int)) == -1)[0] + 1
         
-     
+        misaligned_trials = []
         
         if t == 0:
             # check how off manually elected trial times are off from recorded tll pulses
+            # so far i can think of 2 reasons for drift. case 1: frame rate uneven/dropped, case 2: laser started out of frame or took time to 'warm up'. in this case, values in ttl_check will be positive
             predicted = ttl.reset_index(drop = True)*30
             
             ttl_file_diff = np.array(np.diff(ttl)*30, dtype = int)
-            ttl_select_diff = np.diff(trial_starts)
-            ttl_check = ttl_file_diff - ttl_select_diff
+            DLC_diff = np.diff(trial_starts)
+            ttl_check = ttl_file_diff - DLC_diff
             
-            ttl_pi_drift.append(ttl_check[-1]-ttl_check[0]) # no drift between sync pi and camera :)
+            ttl_pi_drift.append(ttl_check[-1]-ttl_check[0]) 
             
+            # i dont use ahnchor point for anyhting other than chekcing?
             anchor_point = np.where(abs(ttl_check) == np.min(abs(ttl_check)))[0][0] # this is where prey laser has same start time for both cam and sync pi systems, and should be used later for syncing rwd data
             print(f'Anchor point is {np.min(abs(ttl_check))} frames off')
             for index, value in enumerate(ttl_check):
                 # ttl_correction.append(value)
                 if abs(value) > 3:
-                    print(f"'mismatch of {value} frames detected! Trial {index} ")
+                    print(f"Mismatch of {value} frames detected! Trial {index}")
+                    misaligned_trials.append([index, value])
+                    # in the case of a mismatched trial due to case 1: 
+                    # case 2: using an anchor point 
                     
             
             # collect snout2prey laser distances per trial
@@ -716,7 +960,7 @@ for l in range(len(r_log)):
             trial_ends = np.r_[trial_ends, len(distance)]
         
         # Plot
-        if plot_need == True:
+        if plot_need:
              plt.figure(figsize=(12, 6))
          
              n_trials = len(trial_starts)
@@ -747,10 +991,10 @@ for l in range(len(r_log)):
          
              if t == 0:
                  plt.title("Snout to Prey Laser Distance per Trial\n"
-                           f"{r_log['Date'][l]}{r_log['ID'][l]}")
+                           f"{r_log['Date'][l]}{animal_id}")
              else:
                  plt.title("Snout to IR Laser Distance per Trial\n"
-                           f"{r_log['Date'][l]}{r_log['ID'][l]}")
+                           f"{r_log['Date'][l]}{animal_id}")
          
              plt.legend()
              boxoff()
@@ -772,10 +1016,10 @@ for l in range(len(r_log)):
             # plt.legend()
             # if t == 0:
             #     plt.title("Snout Speed per Prey Trial\n  " +
-            #               r_log['Date'][l] + str(r_log['ID'][l]))
+            #               r_log['Date'][l] + animal_id)
             # else: 
             #     plt.title("Snout Speed per IR Trial\n  " + 
-            #               r_log['Date'][l] + str(r_log['ID'][l]))
+            #               r_log['Date'][l] + animal_id)
     
             
             # plt.show()
@@ -784,10 +1028,15 @@ for l in range(len(r_log)):
     df_list.append(d_prey)
     df_list.append(d_IR)
     df_list.append(snout_speed)
+    df_list.append(hrC_speed)
+    df_list.append(tail_speed)
+    df_list.append(misaligned_trials)
+    df_list.append(head_angles)
+    df_list.append(out_of_view_periods)
 
     dlcDat = {
         'session': r_log['Date'][l],
-        'mouse': r_log['ID'][l],    
+        'mouse': animal_id,    
         
         'data': df_list
         
@@ -795,10 +1044,6 @@ for l in range(len(r_log)):
             }
 
 
-    save_file = f"{dlc_savePath}\\{r_log['Date'][l]}{r_log['ID'][l]} DLC.pkl"
-    # pd.to_pickle(dlcDat, save_file) temmppp
+    save_file = f"{dlc_savePath}\\{r_log['Date'][l]}{animal_id} DLC.pkl"
+    pd.to_pickle(dlcDat, save_file) 
     
-    
-
-# comb_save_file = f"{dlc_savePath}\\snout_distance_combined_DLC.pkl"
-# pd.to_pickle(combined_snout_distance, comb_save_file)

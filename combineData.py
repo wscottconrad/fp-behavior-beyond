@@ -8,10 +8,11 @@ Created on Wed Mar  5 12:52:25 2025
 import os
 import pickle
 import numpy as np
-import matplotlib.pyplot as plt
+import pandas as pd
+# import matplotlib.pyplot as plt
 
 
-nt = True
+nt = False
 
 # Define where the stuff is
 if nt == True:
@@ -19,9 +20,11 @@ if nt == True:
 else:
     tankfolder = r'\\vs03.herseninstituut.knaw.nl\VS03-CSF-1\Conrad\Innate_approach\Data_analysis\24.35.01\\freelymoving\\'
 
-siteList = ['ZI-L', 'ZI-R', 'SC-L', 'SC-R', 'SC to ZI-L', 'SC to ZI-R', 'PAG-L', 'PAG-R', 'MLR-L', 'MLR-R']
+# siteList = ['SC-L', 'SC-R']
 
-allDat = [[] for _ in range(18)]
+siteList = ['SC-L', 'SC-R', 'SC to ZI-L', 'SC to ZI-R', 'ZI-L', 'ZI-R', 'ZI to PAG-L', 'ZI to PAG-R', 'ZI to MLR-L', 'ZI to MLR-R', 'PAG-L', 'PAG-R', 'MLR-L', 'MLR-R']
+
+allDat = [[] for _ in range(20)]
 trialDat = {site: {'approach': [], 'avoid': [], 'NR': [], 'IR': []} for site in siteList}  # Dictionary to separate data by site
 trialDat_laser_algn = {site: {'approach': [], 'avoid': [], 'NR': [], 'IR': []} for site in siteList}  # Dictionary to separate data by site
 lagDat = {site: {'approach': [], 'ITI': [], 'IR': []} for site in siteList}
@@ -30,7 +33,13 @@ speedDat = {
     site: {
         'trialSpeed': [],
         'speedTrialsMov': [],
-        'ITIspeed': []
+        'ITIspeed': [],
+        'approach_snout_speed': [],
+        'approach_hrC_speed': [],
+        'approach_tail_speed': [],
+        'IR_snout_speed': [],
+        'IR_hrC_speed': [],
+        'IR_tail_speed': []
     }
     for site in siteList
 }
@@ -127,6 +136,32 @@ for file in files:
                 speedDat[site]['trialSpeed'].append(data['speedTrials'])
                 speedDat[site]['speedTrialsMov'].append(mov_data)
         
+        # prey approach speed DLC
+        if 'approach_speeds' in list(data.keys()):
+            if not pd.isna(data['approach_speeds']):
+                
+                if (not np.isscalar(data['approach_speeds']['snout'])) and (np.sum(data['approach_speeds']['snout']) != 0):
+                        
+                    allDat[18].append(data['approach_speeds']['snout'])
+                
+                    if site in speedDat:
+                        speedDat[site]['approach_snout_speed'].append(data['approach_speeds']['snout'])
+                        speedDat[site]['approach_hrC_speed'].append(data['approach_speeds']['hrC'])
+                        speedDat[site]['approach_tail_speed'].append(data['approach_speeds']['tail'])
+                        
+                # IR approach speed DLC
+                if (not np.isscalar(data['IR_speeds']['snout'])) and (np.sum(data['IR_speeds']['snout']) != 0):
+                        
+                    allDat[19].append(data['IR_speeds']['snout'])
+                
+                    if site in speedDat:
+                        speedDat[site]['IR_snout_speed'].append(data['IR_speeds']['snout'])
+                        speedDat[site]['IR_hrC_speed'].append(data['IR_speeds']['hrC'])
+                        speedDat[site]['IR_tail_speed'].append(data['IR_speeds']['tail'])
+                    
+        
+        
+        # ITI speed
         if (not np.isscalar(data['speedITI'])) and (np.sum(data['speedITI']) != 0):
         
             allDat[5].append(data['speedITI'])
@@ -145,25 +180,10 @@ for file in files:
 
 # Combine data
 allDatComb = {
-    # 'trialSignal': np.vstack(allDat[0]), # useless?
-    # 'Gtrace': np.vstack(allDat[1]), # useless?
-    # 'Itrace': np.vstack(allDat[2]), # useless?
-    'trialSpeed': np.concatenate(allDat[3]) if nt == True else np.array([]),
-    # 'ITIsignal': np.vstack(allDat[4])if np.isscalar(allDat[4]) else np.array([]), # useless?
-    'ITIspeed': np.concatenate(allDat[5]) if nt == True else np.array([]),
-    # 'ZdFoFinit': np.vstack(allDat[6]) if [data['mouse'], data['session']] != ['109436', '2025_03_13_'] else np.nan,
-    'speedTrialsMov': np.vstack(allDat[7]) if nt == True else np.array([]),
-    # 'InitGdata': np.vstack(allDat[8]),
-    # 'InitIdata': np.vstack(allDat[9]),
-    # 'ITIGdata': np.vstack(allDat[10])if np.isscalar(allDat[10]) else np.array([]),
-    # 'ITIIdata': np.vstack(allDat[11])if np.isscalar(allDat[11]) else np.array([]),
-    # 'approachSignal': np.vstack(allDat[12]),
-    # 'approachSignal_trialOnset': np.vstack(allDat[13]),
-    # 'avoidSignal': np.vstack(allDat[14])if np.isscalar(allDat[14]) else np.array([]),
-    # 'avoidSignal_trialOnset': np.vstack(allDat[15])if np.isscalar(allDat[15]) else np.array([]),
-    # 'NRsignal': np.vstack(allDat[16])if np.isscalar(allDat[16]) else np.array([]),
-    # 'NRsignal_yoked': np.vstack(allDat[17])if np.isscalar(allDat[17]) else np.array([]),
 
+    'trialSpeed': np.concatenate(allDat[3]) if nt == True else np.array([]),
+    'ITIspeed': np.concatenate(allDat[5]),
+    'speedTrialsMov': np.vstack(allDat[7]) if nt == True else np.array([]),
 
     # SITE SPECIFIC DATA
     # movement aligned
@@ -197,7 +217,21 @@ allDatComb = {
                                           if values['speedTrialsMov'] else np.array([]),
                 
                         'ITIspeed': np.concatenate(values['ITIspeed'])
-                                    if values['ITIspeed'] else np.array([])
+                                    if values['ITIspeed'] else np.array([]),
+                                    
+                        'approach_snout_speed': np.concatenate(values['approach_snout_speed'])
+                                    if values['approach_snout_speed'] else np.array([]),
+                        'approach_hrC_speed': np.concatenate(values['approach_hrC_speed'])
+                                    if values['approach_hrC_speed'] else np.array([]),
+                        'approach_tail_speed': np.concatenate(values['approach_tail_speed'])
+                                    if values['approach_tail_speed'] else np.array([]),
+                                     
+                        'IR_snout_speed': np.concatenate(values['IR_snout_speed'])
+                                    if values['IR_snout_speed'] else np.array([]),
+                        'IR_hrC_speed': np.concatenate(values['IR_hrC_speed'])
+                                    if values['IR_hrC_speed'] else np.array([]),
+                        'IR_tail_speed': np.concatenate(values['IR_tail_speed'])
+                                    if values['IR_tail_speed'] else np.array([])
                     }
                     for site, values in speedDat.items()
                 },

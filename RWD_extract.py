@@ -10,36 +10,47 @@ Created on Mon Mar  3 13:11:28 2025
 #scott conrad 02/12/2024, adapted from Isis Alonso-Lozares
 
 """
+# Analysis settings
+debug = False
 
-debug = True
-fm_exp = False # set to false if analyzing nt experiments
+if debug:
+    print('Debugging conditions set on! Is this what you want?\n')
 
-regenerate_approach_trial_times = False # used for shuffling trial times for NR trials
+fm_exp = True # set to false if analyzing nt experiments
+cleaner_baseline = False # remove trials where lots of movement occured before trial onset. 
+fwd_speed = True # set to true if you want to use NT ITI's where the animal is moving forward. setting to false detects periods of any movement, whether fwd or backward. 
+filter_mvmnt = False # median filtering of movement made initiation finder worse, not using for now
+
+initiate_exclusion = 1 # in seconds, default 5
+
+regenerate_approach_trial_times = False # IF SET TO TRUE analysis only calculates trial times, does not create traces or save any other data. output used for shuffling trial times for NR trials
 automate_initiate_finder = True # set to false to use manually curated initate times (only for trials, not for ITI)
+reanalyze = True # set to false if you want to skip over sessions that have already been analyzed (file exists) 
 
+exclude_new_animals = True # should be kept to true. false is used for legacy analysis
+
+
+# Plot settings
 inspect_traces = False # plots raw + fitted traces for each approach trial on same graph
 
 plotsignal = False
 plotknee = False # plot 'knee' of movement, used to visually verify calculated initiation point
 
-plot_Zscore = True # set to false if you want to see % dFoF
+plotheatmap = False
+plot_Zscore = False # set to false if you want to see % dFoF
 
 plot_apr_trace = False # plot traces for approach trials
 plot_ITI_trace = False # plot traces for movement during Inter-Trial Intervals
-plotheatmap = True
+
 plotidvtrials = False
 plot_angular_velocity = False
-plot_cros_cor = False #cross correlations between signal and fwd movement
+plot_cros_cor = False  # cross correlations between signal and fwd movement
 plot_turn_trace = False
-initiate_exclusion = 5 # in seconds
-if debug:
-    initiate_exclusion = 1 # since MLR has no visual response
 
-
+plot_speed = False
 
 import sys
 sys.path.append('/Users/sconrad/Documents/GitHub/fp-behavior-beyond')
-
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -78,7 +89,7 @@ def lpFilter(data, sr, lowpass_cutoff, filt_order, db_atten):
         output='sos'
     )
     
-    lp_data = signal.sosfiltfilt(sos, data)
+    lp_data = signal.sosfiltfilt(sos, data) # zero-phase filter, non-causal!
     
     
     # # calculate group delay (if using lfilt)
@@ -164,19 +175,30 @@ def trial_cross_correlation(fp_signal, movement):
     return np.array(xcorrs)
 
 def norm_xcorr(a, b):
-    a = (a - a.mean()) / a.std()
+    a = (a - a.mean()) / a.std() #normlaize
     b = (b - b.mean()) / b.std()
-    return signal.correlate(a, b, mode='full') / len(a)
+    return signal.correlate(a, b, mode='full') / len(a) #divide by length to roughly average
 
-def fm_drift_corrector(rwd_index_array):
-    fm_drift_factor = -0.00041931890844608486
+def fm_drift_corrector(rwd_index_array, drift_ratio = -0.00041931890844608486):
+    # fm_drift_factor = -0.00041931890844608486
+    if abs(drift_ratio--0.00041931890844608486) > 0.0001:
+        print(f'Dif detected: {abs(drift_ratio--0.00041931890844608486)}')
     corrected_array = np.full(len(rwd_index_array), 1)
     for x, value in enumerate(rwd_index_array):
-        corrected_array[x] = int(value + value*fm_drift_factor)
+        corrected_array[x] = int(value + value*drift_ratio)
         
     return corrected_array
-        
-
+    
+    
+def classify_turn(syll):
+    if syll in left_turn:
+        return "left"
+    elif syll in right_turn:
+        return "right"
+    else:
+        return "other"
+         
+            
 filePath = 'W:\\Conrad\\Innate_approach\\Data_collection\\24.35.01\\'
 nt_savePath = 'W:\\Conrad\\Innate_approach\\Data_analysis\\24.35.01\\'
 fm_savePath = 'W:\\Conrad\\Innate_approach\\Data_analysis\\24.35.01\\freelymoving\\'
@@ -187,7 +209,7 @@ nt_approach_times_path = f"{nt_savePath}\\approach_times_since_trial_start.pkl"
 kpms_general_path = 'E:/Conrad/DLC projects/DLC 06_01_2025/fm_subset_cropped/2026_02_03-16_56_39/results/'
 
 
-if regenerate_approach_trial_times == False:
+if not regenerate_approach_trial_times:
     # nt
     with open(nt_approach_times_path, 'rb') as f:
         nt_apr_times_file = pickle.load(f)
@@ -199,20 +221,24 @@ if regenerate_approach_trial_times == False:
         shuffled_fm_apr_times = apr_shuffle(fm_apr_times_file)
 else:
      shuffled_nt_apr_times = []
+     shuffled_fm_apr_times = []
+
 
 r_log = pd.read_csv(f"{filePath}\\recordinglog.csv", sep=None, engine="python", encoding='utf-8-sig')
 
 
 if fm_exp:
-    
     r_log = r_log[r_log['Exp'] == 'fm laser']
+    
+           
+        
     r_log = r_log[:-1]
     # r_log = r_log[r_log['Movement quality'] == 'missing']
-    apr_times = shuffled_nt_apr_times
+    original_shuffled_fm_apr_times = shuffled_fm_apr_times
 
 else: 
     r_log = r_log[r_log['Exp'] == 'nt']
-    apr_times = shuffled_nt_apr_times
+    shuffled_nt_apr_times = shuffled_nt_apr_times
 
     # r_log = r_log[r_log['Exp'] == 'nt' | r_log['Exp'] == 'fm laser' ]
 
@@ -223,11 +249,17 @@ r_log = r_log[r_log['added to db?'] != 'neurotar data corrupt']
 
 r_log = r_log.reset_index()
 
-animalIDs = r_log['ID'].unique()
+# animalIDs = r_log['ID'].unique()
 dates = r_log['Date'].unique()
 numChannels = 2
 
-excluded_animals = ['105647']
+excluded_animals = ['105647', '118401', '118402', '115424']
+if exclude_new_animals:
+    new_exclude_list = ['118584', '119124', '119125', '115419', '105648']
+    excluded_animals = excluded_animals + new_exclude_list
+
+# if fm_exp:
+#     excluded_animals.append('105648')
 
 
 # Preprocessing initialization
@@ -241,9 +273,11 @@ stim_dur = 20*sr # prey laser stimulation (seconds converted to frames)
 
 # Trace window and settings
 pre = 5  # 5 seconds before ttl
+pre_baseline = 0*sr # pre - prebaseline = baseline for mean. e.g. pre = 5, pre_baseline = 2: 5-2 = the 3 seconds before trial/movement start. default = 0
 post = 25  # 25 seconds after
 before = pre * sr
 after = post * sr
+trial_length = before + after
 traceTiming = np.arange(-pre, post + 1, sr / (before + after))
 labelsX = np.arange(-pre, post + 1, 5)
 thresh = 10 # speed threshold setting, to find locomotion start, original was 30
@@ -255,29 +289,46 @@ fm_drift_ratio = []
 all_bouts = []
 
 # %%
+if fm_exp:
+    file_list = os.listdir(fm_savePath)
+else:
+    file_list = os.listdir(nt_savePath)
 
 
 for l in range(len(r_log)):
     
-    # insert debug condition(s) below
-    # if debug:
-    #     l = 35
+    if debug:
+        l = 55
     
-    idn = str(r_log['ID'][l])
+    idn = str(int(r_log['ID'][l]))
     d = str(r_log['Date'][l]) 
-    exp = r_log['Exp'][l]
+    exp = r_log['Exp'][l] 
     
-    if idn in excluded_animals or l == 13 or l == 14: # exclude from analysis
+    ch1 = r_log[str(1)][l]
+    ch2 = r_log[str(2)][l]
+  
+       
+    if not reanalyze:
+        if f"{d}{idn} Channel 2.pkl" in file_list:
+            continue
+    
+        if '2025' in d or '2024' in d:
+            continue
+    
+    if idn in excluded_animals or l == 14: # not sure why l = 13 or 14 excluded from analysis?
         continue
     
     if r_log['first prey'][l] == "don't analyze":
         continue
     
-    if debug:
-        if 'MLR' not in r_log['1'][l] or 'MLR' not in r_log['2'][l]:
-            continue
+    if fm_exp and (r_log['added to dlc'][l] != 'added' and not pd.isna(r_log['added to dlc'][l])):
+        continue
+    
+    
+    # if 'ZI to PAG' not in ch1 and 'ZI to PAG' not in ch2:
+    #     continue
         
-    if l == 63 or l == 64:
+    if not fm_exp and (l == 63 or l == 95 or l == 97): #or l == 95 # for neurotar 
         continue
     
     # Load data
@@ -344,29 +395,44 @@ for l in range(len(r_log)):
     
     
     # clipEnd = max(eventTS) + 40 * sr
-    clipEnd = len(rawData.iloc[:, 2]) - 5*sr # trims last 5 seconds
+    clipEnd = len(rawData.iloc[:, 2]) - 5*sr # trims last 5 seconds # is this needed?
     
+    if idn == '118583' and d == '2026_05_14_':
+        switch_case = True
+        clipEnd = eventTS[4] + 2250 # this is just the value i need to include the 5th IR laser trial before the channels got switched
+        switch_point = 5
         
-    last_event_noclip = eventTS[-1]
+    # elif idn == '119120' and d == '2026_06_16_': # haven't figured out values yet
+    #     switch_case = True
+    #     clipEnd = eventTS[4] + 2250 # this is just the value i need to include the 5th IR laser trial before the channels got switched
+    #     switch_point = 5
+
+    else:
+        switch_case = False
+        
     
     eventTS = eventTS - clipStart
+    
+  
         
     for ch in range(1, numChannels + 1):
         site = r_log[str(ch)][l]
         
+        # if 'exclude' in site:
+        #     continue
         
+        if ((idn == '116632' and site == 'PAG-R') or 
+            (idn == '118973' and site == 'PAG-L') or
+            (idn == '120517' and site == 'PAG-R')):
+            
+            site = 'exclude'
         
         data_set = []
-        data_tile = []
                
         print(f"________________________________________________\nCurrent run: {d}{idn} {site}\n------------------------------------------------")
         
         chIsos = rawData.iloc[int(clipStart):int(clipEnd), 2 * ch]
         chGreen = rawData.iloc[int(clipStart):int(clipEnd), 2 * ch + 1]
-        
-        
-        # sample_signal = sample_signal = np.concatenate([np.full(300, 0), np.full(300, 1), np.full(300, 0)])
-        # filtered_sample = lpFilter(sample_signal, sr, lowpass_cutoff, filt_order, db_atten)
         
         # plt.figure()
         # plt.plot(sample_signal)
@@ -380,7 +446,6 @@ for l in range(len(r_log)):
 
         if plotsignal == True:
             fig = plt.figure()
-            # ts = list(range(5500,5800))
             plt.plot(lp_normDatG, color = 'green')
             plt.plot(lp_normDatI-65, color = 'blue')
             
@@ -388,19 +453,10 @@ for l in range(len(r_log)):
             plt.title(f'{idn} {d} {site} Channel {ch} dF/F')
     
             plt.plot(dFoF, color = "grey")
-        
-        # Prepare to store traces
-        traces = np.full((len(eventTS), before + after), np.nan)
-        # traces_stim_offset = np.full((len(eventTS), before + after), np.nan)
-        tracesGraw = np.full((len(eventTS), before + after), np.nan)
-        tracesIraw = np.full((len(eventTS), before + after), np.nan)
-        real_tracesGraw = np.full((len(eventTS), before + after), np.nan)
-        real_tracesIraw = np.full((len(eventTS), before + after), np.nan)
-        
-        
+      
             
-        # get nt data
-        if ch == 1:
+        # get speed data
+        if ch == 1 or (ch == 2 and r_log[str(1)][l] == 'exclude'):
             
             if exp == 'nt':
                 
@@ -430,13 +486,14 @@ for l in range(len(r_log)):
                  app_idx, avd_idx, 
                  speedTrialsMov, 
                  avoidTrials, initTrace, 
-                 approach_fwdSpeed, angular_initiation
+                 approach_fwdSpeed, angular_initiation,
+                 approach_movement_before
                  ) =                                        nt_ITI_movement(ntFile, ttlFile, 
                                                            eventTS, sr, eventTSBehind, 
                                                               idn, d, fIdx, behindLaserIndex,
                                                               driftTable, l, trialClass, setUp,
-                                                              stim_dur, thresh, automate_initiate_finder,
-                                                              p_latency_ext,plot_angular_velocity, labelsX, traceTiming)
+                                                              stim_dur, thresh, fwd_speed, automate_initiate_finder,
+                                                              p_latency_ext,plot_angular_velocity, labelsX, traceTiming, cleaner_baseline)
                 
                                                                               
                 if 2 in trialClass:
@@ -447,15 +504,28 @@ for l in range(len(r_log)):
                             approachTrials = eventTS[approach_mask] + p_latency_ext[approach_mask]
                             
                             app_idx = np.intersect1d(np.where(trialClass == 2)[0], np.where(p_latency_ext > initiate_exclusion)[0])
+                            
+ 
                    
                     else:
-                            approach_mask = (trialClass == 2) & (initTrace > initiate_exclusion*sr) 
+                            
+                            approach_mask = ((trialClass == 2) & (initTrace > initiate_exclusion * sr)
+                                & ~np.isin(np.arange(len(trialClass)), approach_movement_before))
+                            
                             approachTrials = eventTS[approach_mask] + initTrace[approach_mask]
-                            app_idx = np.intersect1d(np.where(trialClass == 2)[0], np.where(initTrace > initiate_exclusion*sr)[0])
+                            app_idx = np.where(approach_mask)[0]
+                            
+                            # remove approach trials where animal was moving before stimulus onset
+                            # app_idx = [x for x in app_idx if x not in set(approach_movement_before)]
+                            
+                            NR_idx = [x for x in NR_idx if x not in set(approach_movement_before)]
                             
                             angular_approach_mask = angular_initiation-pre*sr > initiate_exclusion*sr
                             angular_approachTrials = eventTS[trialClass == 2][angular_approach_mask] + angular_initiation[angular_approach_mask]
                             angular_app_idx =np.where(trialClass == 2)[0][np.where(angular_initiation-pre*sr > initiate_exclusion*sr)[0]]
+                            
+                            
+                            speedTrialsMov = speedTrialsMov[approach_mask] 
 
 
                               
@@ -467,74 +537,149 @@ for l in range(len(r_log)):
                             nt_approach_times = pickle.load(f)   
                             
                     nt_approach_times.append(initTrace[app_idx])
-                    pd.to_pickle(nt_approach_times, nt_approach_times_path)   
+                    pd.to_pickle(nt_approach_times, nt_approach_times_path)
+                    
+                    continue
 
                   
                                                                      
             else: 
                 
-                eventTS = fm_drift_corrector(eventTS)
+                # eventTS = fm_drift_corrector(eventTS) # fix this, should get drift ratio before 
                 
-                (approachTrials, IR_approachTrials, app_idx, initTrace, IR_initTrace,
-                 approach_snout_speed, IR_snout_speed, IR_onset_idx, IR_app_idx, IR_idx,
-                 drift, drift_ratio) = initiate_finder_DLC(ttlFile, eventTS, r_log, 
+                (eventTS, approachTrials, IR_approachTrials, app_idx, initTrace, IR_initTrace,
+                 approach_speeds, IR_speeds, IR_onset_idx, IR_app_idx, IR_idx,
+                 drift, drift_ratio, speedITI, ITIidx, approach_movement_before,
+                 IR_movement_before) = initiate_finder_DLC(ttlFile, eventTS, r_log, 
                                                            fIdx, l, 
-                                                           stim_dur,sr, plotknee, regenerate_approach_trial_times)
+                                                           stim_dur,sr, filter_mvmnt, 
+                                                           plotknee,
+                                                           cleaner_baseline,
+                                                           exclude_misaligned_trials = False)
                  
-                                                       
-                IR_idx = fm_drift_corrector(IR_idx)
-                IR_onset_idx = fm_drift_corrector(IR_onset_idx)
-                IR_approachTrials = fm_drift_corrector(IR_approachTrials)
+               
+                                       
+                IR_idx = fm_drift_corrector(IR_idx, drift_ratio)
+                IR_onset_idx = fm_drift_corrector(IR_onset_idx, drift_ratio)
+                IR_approachTrials = fm_drift_corrector(IR_approachTrials, drift_ratio)
                                                 
                 fm_drift.append(drift)
                 fm_drift_ratio.append(drift_ratio)
                     
-                if regenerate_approach_trial_times:
-                    if l == range(len(r_log))[0]:
-                        fm_approach_times = [np.nan]
-                    else:
-                        with open(fm_approach_times_path, 'rb') as f:
-                            fm_approach_times = pickle.load(f)   
+                # if regenerate_approach_trial_times:
+                #     if l == range(len(r_log))[0]:
+                #         fm_approach_times = [np.nan]
+                #     else:
+                #         with open(fm_approach_times_path, 'rb') as f:
+                #             fm_approach_times = pickle.load(f)   
                             
-                    fm_approach_times.append(initTrace[app_idx])
-                    pd.to_pickle(fm_approach_times, fm_approach_times_path)
+                #     fm_approach_times.append(initTrace[app_idx])
+                #     pd.to_pickle(fm_approach_times, fm_approach_times_path)
                 
                 for iterator, potential_approaches in enumerate([initTrace, IR_initTrace]):
                     if len(potential_approaches) > 0:
                         approach_mask = potential_approaches > initiate_exclusion*sr 
                         if iterator == 0:
+                            app_discard = np.where(potential_approaches <= initiate_exclusion*sr)[0]
+                            if len(app_discard)>0:
+                                discard_idx = np.flatnonzero(np.isin(app_idx, app_discard))
+                                # Exclude speed trials based an initiate exclusion
+                                for bodypart in approach_speeds.keys():
+                                    approach_speeds[bodypart] = np.delete(
+                                        approach_speeds[bodypart],
+                                        discard_idx,
+                                        axis=0
+                                    )
+                                
                             app_idx = np.where(potential_approaches > initiate_exclusion*sr)[0]
+
+                            filter_for_mask = ~np.isnan(potential_approaches)
+                            prey_approach_mask = approach_mask
                             approachTrials = eventTS[approach_mask] + potential_approaches[approach_mask]
+                            if cleaner_baseline:
+                                approach_movement_before = approach_movement_before[np.where(potential_approaches[filter_for_mask] > initiate_exclusion*sr)[0]]
+                                approachTrials = approachTrials[~approach_movement_before]
+                            
+                         
+                            
+                                
                         else: 
+                            IR_discard = np.where(potential_approaches <= initiate_exclusion*sr)[0]
+                            if len(IR_discard)>0:
+                                discard_idx = np.flatnonzero(np.isin(IR_app_idx, IR_discard))
+                                # Exclude speed trials based an initiate exclusion
+                                for bodypart in IR_speeds.keys():
+                                    IR_speeds[bodypart] = np.delete(
+                                        IR_speeds[bodypart],
+                                        discard_idx,
+                                        axis=0
+                                    )
+                                
                             IR_app_idx = np.where(potential_approaches > initiate_exclusion*sr)[0]
+                            filter_for_mask = ~np.isnan(potential_approaches)
                             IR_approachTrials = list(IR_idx[approach_mask] + potential_approaches[approach_mask])
+                            IR_approach_mask = approach_mask
                             for x,float_value in enumerate(IR_approachTrials):
                                 IR_approachTrials[x] = int(float_value)
+                                
+                            if cleaner_baseline:
+                                IR_movement_before = IR_movement_before[np.where(potential_approaches[filter_for_mask] > initiate_exclusion*sr)[0]]
+                                
+                          
 
                 
-                ITIidx = np.nan
-                speedITI = np.nan
+           
+
+                    
+                
+                
+                # print(f'{len(ITIidx)} ITI trials detected')
+            
                 speedTrials = np.nan
-                speedTrialsMov = np.nan
+                speedTrialsMov = np.nan # speed traces stored as approach_snout_speed and IR_snout_speed
                 avoidTrials = np.nan
                 avd_idx = np.array([])
-                ttl = eventTS
                 long_trial_idx = np.where((initTrace > (stim_dur/2)))[0]
 
                 # NR_idx = np.array(range(4))
                 # NR_idx = NR_idx[~np.isin(NR_idx, app_idx)]    
-                NR_idx = long_trial_idx
-                # print(NR_idx)
+                NR_idx = long_trial_idx # for FM, NR is when animals still approach, just much later! (more than 10 seconds)
+                
+                if cleaner_baseline:
+                    # remove trials where animal was moving before stimulus onset
+                                        
+                    app_idx = app_idx[~approach_movement_before]
+                    
+                    NR_idx = NR_idx[np.isin(NR_idx, app_idx)]
+                    
+                    IR_app_idx = IR_app_idx[~IR_movement_before]
             
             if len(NR_idx) > 0:
-                if len(apr_times) < len(NR_idx):
-                    apr_times = np.concatenate((apr_times, shuffled_nt_apr_times)) # there are less NR trials than approach so i need to reuse
-                shuffled_times = apr_times[0:len(NR_idx)]
-                apr_times = apr_times[len(NR_idx):]
+                if len(shuffled_fm_apr_times) < len(NR_idx):
+                    shuffled_fm_apr_times = np.concatenate((original_shuffled_fm_apr_times, shuffled_fm_apr_times)) # there are less NR trials than approach so i need to reuse maybe?
+                shuffled_times = shuffled_fm_apr_times[0:len(NR_idx)] # get times for shuffled traces
+                shuffled_fm_apr_times = shuffled_fm_apr_times[len(NR_idx):] # remove used approach times
+                
+           
+            
+            if regenerate_approach_trial_times:
+                 if l == 2:
+                     fm_approach_times = []
+                 else:
+                     with open(fm_approach_times_path, 'rb') as f:
+                         fm_approach_times = pickle.load(f)   
+                         
+                 fm_approach_times.append(initTrace[app_idx])
+                 pd.to_pickle(fm_approach_times, fm_approach_times_path)
+                 
+                 continue
               
-# %%
+# %% # capture manually curated problem prey trials for inspection and eventual deleting
 
         # capture manually curated problem prey trials for inspection and eventual deleting
+        
+        # not really in use
+        
         noisy_prey_trial_mask = np.full((len(eventTS), 2), False)
         inspect_noisy_prey = r_log['Noisy Prey Trials'][l]
         if isinstance(inspect_noisy_prey, str):
@@ -576,6 +721,19 @@ for l in range(len(r_log)):
           
                      
         # Extract traces for all trials, aligned to prey laser onset
+        if switch_case:
+            eventTS = eventTS[:switch_point]
+            # approachTrials = approachTrials
+            IR_idx = IR_idx[:switch_point]
+            
+        # Prepare to store traces
+        traces = np.full((len(eventTS), before + after), np.nan)
+        # traces_stim_offset = np.full((len(eventTS), before + after), np.nan)
+        tracesGraw = np.full((len(eventTS), before + after), np.nan)
+        tracesIraw = np.full((len(eventTS), before + after), np.nan)
+        real_tracesGraw = np.full((len(eventTS), before + after), np.nan)
+        real_tracesIraw = np.full((len(eventTS), before + after), np.nan)
+            
         for m, idx in enumerate(eventTS):
             traces[m] = dFoF[idx - before:idx + after]
             # traces_stim_offset[m] = dFoF[idx - before:idx + after]
@@ -599,6 +757,8 @@ for l in range(len(r_log)):
         IR_traces = []
         IR_tracesGraw = []
         IR_tracesIraw = []
+    
+            
         if len(IR_idx) > 0:
             for index in IR_idx:
                 IR_traces.append(dFoF[index - before: index + after])
@@ -624,7 +784,7 @@ for l in range(len(r_log)):
         approachTrials = approachTrials.astype(np.int64)
         if len(approachTrials) > 0:
             for m in range(len(approachTrials)):
-                if np.size(dFoF[approachTrials[m] - before:approachTrials[m] + after]) == 900:
+                if np.size(dFoF[approachTrials[m] - before:approachTrials[m] + after]) == trial_length:
                     # tracesInit[m] = dFoF[approachTrials[m] - before:approachTrials[m] + after]
                     tracesInitGraw[m] = lp_normDatG[approachTrials[m] - before:approachTrials[m] + after]
                     tracesInitIraw[m] = lp_normDatI[approachTrials[m] - before:approachTrials[m] + after]
@@ -642,31 +802,33 @@ for l in range(len(r_log)):
         if len(approachTrials) > 0:
             
             for m in range(len(approachTrials)):
-                if np.size(dFoF[approachTrials[m] - before:approachTrials[m] + after]) == 900:
+                if np.size(dFoF[approachTrials[m] - before:approachTrials[m] + after]) == trial_length:
                     appTracesInit[m] = dFoF[approachTrials[m] - before:approachTrials[m] + after]              
         else:
             appTracesInit = np.nan
             
         #dFoF traces for prey approach, angular aligned # to do add case for fm exp
-        if not fm_exp:
-            angular_appTracesInit = np.full((len(angular_approachTrials), before + after), np.nan)
+        # if not fm_exp:
+        #     angular_appTracesInit = np.full((len(angular_approachTrials), before + after), np.nan)
                  
-            if len(angular_approachTrials) > 0:
+        #     if len(angular_approachTrials) > 0:
                 
-                for m in range(len(angular_approachTrials)):
-                    if np.size(dFoF[angular_approachTrials[m] - before:angular_approachTrials[m] + after]) == 900:
-                        angular_appTracesInit[m] = dFoF[angular_approachTrials[m] - before:angular_approachTrials[m] + after]              
-            else:
-                angular_appTracesInit = np.nan
-        else: 
-            angular_appTracesInit = np.nan
+        #         for m in range(len(angular_approachTrials)):
+        #             if np.size(dFoF[angular_approachTrials[m] - before:angular_approachTrials[m] + after]) == trial_length:
+        #                 angular_appTracesInit[m] = dFoF[angular_approachTrials[m] - before:angular_approachTrials[m] + after]              
+        #     else:
+        #         angular_appTracesInit = np.nan
+        # else: 
+        angular_appTracesInit = np.nan
+        angular_approachTrials = np.nan
+        angular_app_idx = []
                     
         # dFoF traces for IR approach, movement aligned     
         if len(IR_approachTrials) > 0:
             IR_appTracesInit = np.full((len(IR_approachTrials), before + after), np.nan)
             # IR_approachTrials = IR_approachTrials.astype(np.int64)
             for m in range(len(IR_approachTrials)):
-                if np.size(dFoF[IR_approachTrials[m] - before:IR_approachTrials[m] + after]) == 900:
+                if np.size(dFoF[IR_approachTrials[m] - before:IR_approachTrials[m] + after]) == trial_length:
                     IR_appTracesInit[m] = dFoF[IR_approachTrials[m] - before:IR_approachTrials[m] + after]
                 else:
                     print("Not all IR trials included, something went wrong with clipping")            
@@ -681,7 +843,7 @@ for l in range(len(r_log)):
             
             if len(avoidTrials) > 0:
                 for m in range(len(avoidTrials)):
-                    if np.size(dFoF[avoidTrials[m] - before:avoidTrials[m] + after]) == 900:
+                    if np.size(dFoF[avoidTrials[m] - before:avoidTrials[m] + after]) == trial_length:
                         avdTracesInit[m] = dFoF[avoidTrials[m] - before:avoidTrials[m] + after]
                     else:
                         print("Not all avoid trials included, something went wrong with clipping")         
@@ -689,16 +851,17 @@ for l in range(len(r_log)):
             avdTracesInit = np.nan
             
         # traces for No Response (NR), both prey laser aligned and shuffled initiation times from approach times (yoked)
-        NRtraces_yoked = NRtrials = np.nan
+        NRtraces_yoked = np.nan
+        NRtrials = np.nan
         if len(NR_idx)>0:
-            NRtrials = ttl[NR_idx] #affected by change in ttl 15/8/25
+            NRtrials = eventTS[NR_idx] #changed from drift corrected ttl to just the times recorded by rwd
             NRtraces = np.full((len(NRtrials), before + after), np.nan)
             
-            NRtrials = NRtrials.astype(np.int64)
+            NRtrials = NRtrials.astype(np.int64) # timestamp location, in frames
             
             if len(NRtrials) > 0:
                 for m in range(len(NRtrials)):
-                    if np.size(dFoF[NRtrials[m] - before:NRtrials[m] + after]) == 900:
+                    if np.size(dFoF[NRtrials[m] - before:NRtrials[m] + after]) == trial_length:
                         NRtraces[m] = dFoF[NRtrials[m] - before:NRtrials[m] + after]
                     else:
                         print("Not all NR trials included, something went wrong with clipping")
@@ -709,10 +872,10 @@ for l in range(len(r_log)):
          
                 
             NRtraces_yoked = np.full((len(NR_idx), before + after), np.nan)
-            if regenerate_approach_trial_times == False:
+            if not regenerate_approach_trial_times:
                 for k, nr in enumerate(NR_idx):
                     yoked_ts = int(eventTS[nr] + shuffled_times[k])
-                    if np.size(dFoF[yoked_ts - before:yoked_ts + after]) == 900: #lazy fix, should edit so it tries another integer from shuffled times
+                    if np.size(dFoF[yoked_ts - before:yoked_ts + after]) == trial_length: 
                         NRtraces_yoked[k] = dFoF[yoked_ts - before:yoked_ts + after]
         
         # for ITIs
@@ -739,27 +902,30 @@ for l in range(len(r_log)):
         # Baseline correction (z-scoring)
         #################################
         
-        # traceDataSD = np.std(traces[:, :pre * sr], axis=1) # axis 1 is along row
-        traceDataSD = np.std(traces[:, :pre * sr])     
-        ZdFoF = (traces - np.mean(traces[:, :pre * sr], axis=1).reshape(-1, 1)) / traceDataSD
+        # traceDataSD = np.std(traces[:, pre_baseline:pre * sr], axis=1) # axis 1 is along row
+        # traceDataSD = np.mean(traceDataSD)
+        # ZdFoF = (traces - np.mean(traces[:, pre_baseline:pre * sr], axis=1).reshape(-1, 1)) / traceDataSD.reshape(-1,1)
+        
+        traceDataSD = np.std(traces[:, pre_baseline:pre * sr])     
+        ZdFoF = (traces - np.mean(traces[:, pre_baseline:pre * sr], axis=1).reshape(-1, 1)) / traceDataSD
         
         # Collate data 
         if len(IR_traces) > 0:
             IR_traces = np.vstack(IR_traces)
-            IR_traceDataSD = np.std(IR_traces[:, :pre * sr]) 
-            IR_ZdFoF = (IR_traces - np.mean(IR_traces[:, :pre * sr], axis=1).reshape(-1, 1)) / IR_traceDataSD
+            IR_traceDataSD = np.std(IR_traces[:, pre_baseline:pre * sr]) 
+            IR_ZdFoF = (IR_traces - np.mean(IR_traces[:, pre_baseline:pre * sr], axis=1).reshape(-1, 1)) / IR_traceDataSD
         
-        traceDataSDG = np.std(tracesGraw[:, :pre * sr])
-        Gdata = (tracesGraw - np.mean(tracesGraw[:, :pre * sr], axis=1).reshape(-1, 1)) / traceDataSDG
+        traceDataSDG = np.std(tracesGraw[:, pre_baseline:pre * sr])
+        Gdata = (tracesGraw - np.mean(tracesGraw[:, pre_baseline:pre * sr], axis=1).reshape(-1, 1)) / traceDataSDG
         
-        traceDataSDI = np.std(tracesIraw[:, :pre * sr])
-        Idata = (tracesIraw - np.mean(tracesIraw[:, :pre * sr], axis=1).reshape(-1, 1)) / traceDataSDI
+        traceDataSDI = np.std(tracesIraw[:, pre_baseline:pre * sr])
+        Idata = (tracesIraw - np.mean(tracesIraw[:, pre_baseline:pre * sr], axis=1).reshape(-1, 1)) / traceDataSDI
         
         # APPROACH INITIATION and PREYLASER ALIGNED
         
-        if approachTrials is not np.nan and len(approachTrials) > 0:
-            ZdFoFApproach = (appTracesInit - np.mean(traces[app_idx,:pre*sr],axis=1).reshape(-1, 1)) / traceDataSD
-            ZdFoFApproach_trialOnset = (traces[app_idx] - np.mean(traces[app_idx,:pre*sr],axis=1).reshape(-1, 1)) / traceDataSD
+        if approachTrials is not np.nan and len(app_idx) > 0:
+            ZdFoFApproach = (appTracesInit - np.mean(traces[app_idx,pre_baseline:pre*sr],axis=1).reshape(-1, 1)) / traceDataSD
+            ZdFoFApproach_trialOnset = (traces[app_idx] - np.mean(traces[app_idx,pre_baseline:pre*sr],axis=1).reshape(-1, 1)) / traceDataSD
             
             if plot_apr_trace:
                 if plot_Zscore:
@@ -790,16 +956,18 @@ for l in range(len(r_log)):
             ZdFoFApproach_trialOnset = np.nan
         
         # angular approach aligned
-        if angular_approachTrials is not np.nan and len(angular_approachTrials) > 0:
-            angular_ZdFoFApproach = (angular_appTracesInit - np.mean(traces[angular_app_idx,:pre*sr],axis=1).reshape(-1, 1)) / traceDataSD
+        # if angular_approachTrials is not np.nan and len(angular_approachTrials) > 0:
+        #     angular_ZdFoFApproach = (angular_appTracesInit - np.mean(traces[angular_app_idx,pre_baseline:pre*sr],axis=1).reshape(-1, 1)) / traceDataSD
             
-        else:
-            angular_ZdFoFApproach = np.nan
+        # else:
+            
+            # skiiping nagular approach for now, since didnt see massive difference
+        angular_ZdFoFApproach = np.nan
         
         # IR trials
-        if len(IR_approachTrials) > 0:
-            IR_ZdFoFApproach = (IR_appTracesInit - np.mean(IR_traces[IR_app_idx,:pre*sr],axis=1).reshape(-1, 1)) / IR_traceDataSD
-            IR_ZdFoFApproach_trialOnset = (IR_traces[IR_app_idx] - np.mean(IR_traces[IR_app_idx,:pre*sr],axis=1).reshape(-1, 1)) / IR_traceDataSD
+        if len(IR_app_idx) > 0:
+            IR_ZdFoFApproach = (IR_appTracesInit - np.mean(IR_traces[IR_app_idx,pre_baseline:pre*sr],axis=1).reshape(-1, 1)) / IR_traceDataSD
+            IR_ZdFoFApproach_trialOnset = (IR_traces[IR_app_idx] - np.mean(IR_traces[IR_app_idx,pre_baseline:pre*sr],axis=1).reshape(-1, 1)) / IR_traceDataSD
             
             if plot_apr_trace:
                 if plot_Zscore:
@@ -831,35 +999,36 @@ for l in range(len(r_log)):
                       
         # AVOID INITIATION and PREYLASER ALIGNED
         if avoidTrials is not np.nan and len(avoidTrials) > 0:
-            ZdFoFAvoid = (avdTracesInit - np.mean(traces[avd_idx,:pre*sr],axis=1).reshape(-1, 1)) / traceDataSD
-            ZdFoFAvoid_trialOnset = (traces[avd_idx] - np.mean(traces[avd_idx,:pre*sr],axis=1).reshape(-1, 1)) / traceDataSD
+            ZdFoFAvoid = (avdTracesInit - np.mean(traces[avd_idx,pre_baseline:pre*sr],axis=1).reshape(-1, 1)) / traceDataSD
+            ZdFoFAvoid_trialOnset = (traces[avd_idx] - np.mean(traces[avd_idx,pre_baseline:pre*sr],axis=1).reshape(-1, 1)) / traceDataSD
 
         else:
             ZdFoFAvoid = np.nan
             ZdFoFAvoid_trialOnset = np.nan
             
-        # and for NR (only PREYLASER ALIGNED)
-        ZdFoFNR = ZdFoFNR_yoked = np.nan
+        # and for NR 
+        ZdFoFNR = np.nan
+        ZdFoFNR_yoked = np.nan
         if NRtrials is not np.nan and len(NRtrials) > 0:
-            ZdFoFNR = (NRtraces - np.mean(traces[NR_idx,:pre*sr],axis=1).reshape(-1, 1)) / traceDataSD
+            ZdFoFNR = (NRtraces - np.mean(traces[NR_idx,pre_baseline:pre*sr],axis=1).reshape(-1, 1)) / traceDataSD
             
-            ZdFoFNR_yoked = (NRtraces_yoked - np.mean(traces[NR_idx,:pre*sr],axis=1).reshape(-1, 1)) / traceDataSD
+            ZdFoFNR_yoked = (NRtraces_yoked - np.mean(traces[NR_idx,pre_baseline:pre*sr],axis=1).reshape(-1, 1)) / traceDataSD
             
 # %% for ITI
 
         if tracesITI is not np.nan and len(tracesITI) > 0:
             tracesITI = np.vstack(tracesITI);
 
-            traceDataSDITI = np.std(tracesITI[:,:pre*sr])
-            ZdFoFITI = (tracesITI - np.mean(tracesITI[:,:pre*sr], axis=1).reshape(-1,1))/ traceDataSDITI
+            traceDataSDITI = np.std(tracesITI[:,pre_baseline:pre*sr])
+            ZdFoFITI = (tracesITI - np.mean(tracesITI[:,pre_baseline:pre*sr], axis=1).reshape(-1,1))/ traceDataSDITI
 
             tracesITIGraw = np.vstack(tracesITIGraw)
-            traceDataSDG = np.std(tracesITIGraw[:,:pre*sr])
-            ITIGdata = (tracesITIGraw - np.mean(tracesITIGraw[:,:pre*sr],axis=1).reshape(-1,1)) /traceDataSDG
+            traceDataSDG = np.std(tracesITIGraw[:,pre_baseline:pre*sr])
+            ITIGdata = (tracesITIGraw - np.mean(tracesITIGraw[:,pre_baseline:pre*sr],axis=1).reshape(-1,1)) /traceDataSDG
 
             tracesITIIraw = np.vstack(tracesITIIraw)
-            traceDataSDI = np.std(tracesITIIraw[:,:pre*sr])
-            ITIIdata = (tracesITIIraw - np.mean(tracesITIIraw[:,:pre*sr],axis=1).reshape(-1,1)) /traceDataSDI
+            traceDataSDI = np.std(tracesITIIraw[:,pre_baseline:pre*sr])
+            ITIIdata = (tracesITIIraw - np.mean(tracesITIIraw[:,pre_baseline:pre*sr],axis=1).reshape(-1,1)) /traceDataSDI
                       
             if plot_ITI_trace:
                 plt.figure()
@@ -888,7 +1057,7 @@ for l in range(len(r_log)):
             ITIGdata = np.nan
             ITIIdata = np.nan
 
-# %%
+# %% heat maps
         
         # Plotting heatmaps, prey
         if plot_Zscore:
@@ -1001,13 +1170,17 @@ for l in range(len(r_log)):
         lag_correlations_ITI = np.nan
         lag_correlations_IR = np.nan
         
-        if np.size(appTracesInit) > 1:
+        if np.size(app_idx) > 0:
             if exp == 'nt':
+                # speed_signal = approach_fwdSpeed
                 lag_correlations_approach = np.array([norm_xcorr(appTracesInit[t], approach_fwdSpeed[t]) 
                           for t in range(appTracesInit.shape[0])])
             else:
-                lag_correlations_approach = np.array([norm_xcorr(appTracesInit[t], approach_snout_speed[t]) 
+                lag_correlations_approach = np.array([norm_xcorr(appTracesInit[t], approach_speeds['snout'][t]) 
                           for t in range(appTracesInit.shape[0])])
+            
+            
+            
             if plot_cros_cor:
                 plt.figure()
             
@@ -1033,7 +1206,7 @@ for l in range(len(r_log)):
                 plt.title('Approach trials')
                 boxoff()
         
-        if exp == 'nt' and np.size(tracesITI) > 1:
+        if np.size(tracesITI) > 1:
             lag_correlations_ITI = np.array([norm_xcorr(tracesITI[t], speedITI[t]) 
                           for t in range(tracesITI.shape[0])])
             
@@ -1062,8 +1235,9 @@ for l in range(len(r_log)):
                 plt.xticks(np.arange(-rng, rng+1, 50))   # adjust tick spacing as needed
                 boxoff()
                 
-        if np.size(IR_appTracesInit) > 1:
-            lag_correlations_IR = np.array([norm_xcorr(IR_appTracesInit[t], IR_snout_speed[t]) 
+        if np.size(IR_app_idx) > 1:
+            IR_appTracesInit = IR_appTracesInit[~np.isnan(IR_appTracesInit).all(axis=1)]
+            lag_correlations_IR = np.array([norm_xcorr(IR_appTracesInit[t], IR_speeds['snout'][t]) 
                           for t in range(IR_appTracesInit.shape[0])])
             
             if plot_cros_cor:
@@ -1091,7 +1265,12 @@ for l in range(len(r_log)):
                 plt.xticks(np.arange(-rng, rng+1, 50))   # adjust tick spacing as needed
                 boxoff()
         
-        if fm_exp: 
+        mean_dFoF_by_syllable = np.nan
+
+# %% syllable
+        if False: 
+            
+             
         #    syllable data
             mean_dFoF_by_syllable = np.nan
             # left_turn = [5, 9, 10, 11, 13]
@@ -1099,7 +1278,12 @@ for l in range(len(r_log)):
             left_turn = [1, 3, 7, 13, 18, 22]
             right_turn = [5, 6, 8, 11, 12, 17]
             
-            animal_out_of_view_index = list(map(int, r_log['animal hidden frames'][l].split(',')))
+            if not np.isnan(r_log['animal hidden frames'][l]): 
+                animal_out_of_view_index = list(map(int, r_log['animal hidden frames'][l].split(',')))
+                
+            else:
+                animal_out_of_view_index = []
+                
             animal_in_view_index = []
             for itr, index in enumerate(animal_out_of_view_index):
                 if itr%2 == 1:
@@ -1197,13 +1381,6 @@ for l in range(len(r_log)):
             bout_df["date"] = d
             all_bouts.append(bout_df)
             
-            def classify_turn(syll):
-                if syll in left_turn:
-                    return "left"
-                elif syll in right_turn:
-                    return "right"
-                else:
-                    return "other"
             
             if "turn_type" not in bout_df.columns:
                 bout_df["turn_type"] = bout_df["syllable"].apply(classify_turn)
@@ -1498,9 +1675,40 @@ for l in range(len(r_log)):
             # print(f"dif between trim_end and kpms_data is {trim_end-len(kpms_data)} frames") # i think this could be improved by using camera's ttl (first frame when laser appears on last prey trial)
 
 # %%
+# %%
         if site == 'exclude':
             continue
         
+        if len(NR_idx) > 0:
+            print('\nshuffled trial added!\n')
+        # if debug:
+        #     if lag_correlations_approach is not None and not np.all(np.isnan(lag_correlations_approach)):
+        #         print(f'Approach corr: {len(lag_correlations_approach)}')
+        #     else:
+        #         print('Approach corr: 0')
+        
+        #     if ZdFoFApproach is not None and not np.all(np.isnan(ZdFoFApproach)):
+        #         print(f'Approach trials: {len(ZdFoFApproach)}')
+        #     else:
+        #         print('Approach trials: 0')
+
+        
+        if plot_speed:
+            if len(app_idx) > 0:
+                plt.figure() 
+                line_colors = [[0.9, 0.9, 0.9], [0.6, 0.6, 0.6], [0.3, 0.3, 0.3]]
+                ts = np.linspace(-pre, post, (pre+post)*sr)
+                if fm_exp:
+                    for name, data in approach_speeds.items():
+                        if len(data)>1:
+                            plt.plot(ts, np.mean(data, axis = 0), label=f"{name}")
+                else:
+                    [plt.plot(ts, app_speed) for app_speed in approach_fwdSpeed]
+                    
+                plt.legend()  
+                plt.title('Prey approach, none removed')
+            
+                
         # Save data
         sesdat = {
             'session': d,
@@ -1545,11 +1753,15 @@ for l in range(len(r_log)):
             'lag_correlations_IR': lag_correlations_IR,
 
     
-            'speedTrials': speedTrials if ch == 1 else np.nan,
-            'speedITI': speedITI if ch == 1 else np.nan,
-            'speedTrialsMov': speedTrialsMov if ch == 1 else np.nan,
+            'speedTrials': speedTrials if ch == 1 or (ch == 2 and r_log[str(1)][l] == 'exclude') else np.nan,
+            'speedITI': speedITI if ch == 1 or (ch == 2 and r_log[str(1)][l] == 'exclude') else np.nan,
+            'speedTrialsMov': speedTrialsMov if ch == 1 or (ch == 2 and r_log[str(1)][l] == 'exclude') else np.nan,
             
-            'mean_dFoF_by_syllable': mean_dFoF_by_syllable if fm_exp else np.nan
+            'approach_speeds': approach_speeds if fm_exp and (ch == 1 or (ch == 2 and r_log[str(1)][l] == 'exclude')) else np.nan,
+            'IR_speeds': IR_speeds if fm_exp and (ch == 1 or (ch == 2 and r_log[str(1)][l] == 'exclude')) else np.nan,
+
+            
+            'mean_dFoF_by_syllable': mean_dFoF_by_syllable if fm_exp and '2025' in d else np.nan
             
             
                 
@@ -1559,7 +1771,11 @@ for l in range(len(r_log)):
             save_file = f"{nt_savePath}{d}{idn} Channel {ch}.pkl"
         else:
             save_file = f"{fm_savePath}{d}{idn} Channel {ch}.pkl"
+        
             
+        # if debug: # skip saving
+        #     continue
+        
         pd.to_pickle(sesdat, save_file)
 # %%
 master_bout_df = pd.concat(all_bouts, ignore_index=True)
